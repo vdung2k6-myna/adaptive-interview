@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1786177463728,
+      "tag": "0000_add_embeddings_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786190395311,
+      "tag": "0001_redundant_night_thrasher",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786250000000,
+      "tag": "0004_add_evaluation_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786250000001,
+      "tag": "0005_migrate_evaluations",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786257926746,
+      "tag": "0004_aromatic_orphan",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786259032756,
+      "tag": "0005_salty_loners",
+      "breakpoints": true
+    }
+  ]
+}

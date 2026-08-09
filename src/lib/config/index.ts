@@ -1,0 +1,38 @@
+export interface AppConfig {
+  env: "development" | "production" | "test";
+  database: {
+    poolSize: number;
+  };
+  ollama: {
+    baseUrl: string;
+    chatModel: string;
+    embedModel: string;
+    chatTimeoutMs: number;
+    embedTimeoutMs: number;
+    retries: number;
+  };
+  evaluation: {
+    temperature: number;
+    maxAttempts: number;
+  };
+  features: {
+    enableStreaming: boolean;
+    enableEvaluations: boolean;
+    enableEmbeddings: boolean;
+  };
+}
+
+import { developmentConfig } from "./development";
+import { productionConfig } from "./production";
+
+const env = (process.env.NODE_ENV as AppConfig["env"]) || "development";
+
+const configs: Record<AppConfig["env"], AppConfig> = {
+  development: developmentConfig,
+  production: productionConfig,
+  test: { ...developmentConfig, env: "test", database: { poolSize: 2 } },
+};
+
+const config: AppConfig = configs[env] ?? developmentConfig;
+
+export default config;
