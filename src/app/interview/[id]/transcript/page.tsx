@@ -154,6 +154,8 @@ export default function TranscriptPage() {
   const speakAbortRef = useRef<AbortController | null>(null);
   /** Incremented every time Speak starts — used to invalidate stale SSE loops. */
   const speakGenerationRef = useRef(0);
+  /** True once the SSE speak-stream emits `event: done`. */
+  const speakStreamDoneRef = useRef(false);
 
   // Reorder buffer: holds chunks that arrived out-of-order until all
   // previous indices are ready, ensuring playback always starts from 0.
@@ -383,6 +385,7 @@ export default function TranscriptPage() {
     objectUrlsRef.current = [];
     pendingChunksRef.current.clear();
     nextExpectedIndexRef.current = 0;
+    speakStreamDoneRef.current = false;
   }
 
   /** Flush pending chunks in strict index order starting from nextExpectedIndex.
@@ -437,14 +440,20 @@ export default function TranscriptPage() {
     }
 
     cleanupStreamState();
+    speakStreamDoneRef.current = false;
 
     // Create sentence queue for this speak session
     if (audioCtxRef.current) {
       sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
         playbackRate: playbackRate,
         onFinished: () => {
-          cleanupStreamState();
-          setSpeakingMsgId(null);
+          // Only tear down when the SSE stream has finished emitting chunks.
+          // The queue can become momentarily empty while waiting for the next
+          // sentence to be synthesized, so an empty queue does not mean done.
+          if (speakStreamDoneRef.current) {
+            cleanupStreamState();
+            setSpeakingMsgId(null);
+          }
         },
       });
     }
@@ -519,7 +528,18 @@ export default function TranscriptPage() {
               }
 
               case "done": {
-                // Playback continues; onFinished will clear state
+                // Stream has emitted all chunks. If the queue is already idle,
+                // tear down now; otherwise onFinished will do it after the last
+                // sentence finishes playing.
+                speakStreamDoneRef.current = true;
+                if (
+                  sentenceQueueRef.current &&
+                  !sentenceQueueRef.current.getIsPlaying() &&
+                  sentenceQueueRef.current.getQueueLength() === 0
+                ) {
+                  cleanupStreamState();
+                  setSpeakingMsgId(null);
+                }
                 break;
               }
 

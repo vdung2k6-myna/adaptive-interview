@@ -4,6 +4,27 @@
 
 ## 2026-08-24
 
+### Fix Transcript Speak Stopping After First Sentence
+
+**Change:** `fix-transcript-speak-stops-after-first-sentence`
+
+**Problem:** On the transcript page, clicking **Speak** on messages containing sentence boundaries (e.g., "In a Node.js service...") played only the first sentence and then stopped. The UI button flipped back to **Speak**, but the rest of the audio never played.
+
+**Root Cause:** `SentenceAudioQueue` fires `onFinished` whenever its local item queue momentarily becomes empty while waiting for the next SSE chunk to arrive. The transcript page interpreted that empty queue as "playback finished" and destroyed the queue and chunk buffers, causing all subsequent chunks to be dropped.
+
+**Solution:** Track SSE stream completion separately from queue emptiness. The queue and buffers are only torn down when the backend has emitted `event: done` **and** the queue has drained its last item.
+
+**What changed:**
+- `src/app/interview/[id]/transcript/page.tsx`:
+  - Added `speakStreamDoneRef` to remember when the SSE stream has emitted all chunks.
+  - Guarded `SentenceAudioQueue.onFinished` so it only cleans up when `speakStreamDoneRef.current` is true.
+  - Handled the SSE `done` event by setting `speakStreamDoneRef.current = true` and checking whether the queue is already idle.
+  - Reset `speakStreamDoneRef.current` in `cleanupStreamState()` and at the start of `speakMessageStream()`.
+
+---
+
+## 2026-08-24
+
 ### Add Playback Rate Control for AI Voice
 
 **Change:** `add-playback-rate-control`
