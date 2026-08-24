@@ -1,4 +1,4 @@
-﻿# Design: Reconcile adaptive-interview as Frontend Repo
+# Design: Reconcile adaptive-interview as Frontend Repo
 
 ## Approach
 

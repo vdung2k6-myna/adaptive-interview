@@ -1,4 +1,4 @@
-﻿# Development Setup Guide
+# Development Setup Guide
 
 This guide covers setting up only the **Next.js frontend**. The database, migrations, Ollama integration, and audio services all live in the [backend repository](https://github.com/vdung2k6-myna/adaptive-interview-api). See [adaptive-interview-api/docs/SETUP.md](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SETUP.md) for backend setup.
 

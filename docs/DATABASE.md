@@ -1,4 +1,4 @@
-﻿# Database Documentation
+# Database Documentation
 
 ## Important
 

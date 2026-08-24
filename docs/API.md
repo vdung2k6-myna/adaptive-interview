@@ -1,4 +1,4 @@
-﻿# API Documentation
+# API Documentation
 
 The Adaptive Interview Engine API is served by the standalone Express backend in `adaptive-interview-api`. The Next.js frontend does not implement any API routes; it delegates every call to the backend.
 

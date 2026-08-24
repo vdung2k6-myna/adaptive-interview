@@ -1,4 +1,4 @@
-﻿# Adaptive Interview Engine
+# Adaptive Interview Engine
 
 An AI-powered technical interview platform that generates personalized, context-aware interview questions in real time, evaluates candidates with structured AI scoring, and provides a recruiter dashboard for review and calibration.
 
