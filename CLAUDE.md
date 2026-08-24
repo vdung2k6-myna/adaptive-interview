@@ -33,10 +33,9 @@ This document defines the conventions, standards, and expectations for AI-assist
 - Rich Markdown rendering with syntax highlighting
 - Anonymous session links (UUID-based)
 
-**Repository root:** `D:\Working\Projects\adaptive-interview`
-
-**Related repositories:**
-- Backend API: [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api)
+**Repository root:** `D:\Working\Projects\adaptive-interview`  
+**Frontend repository:** https://github.com/vdung2k6-myna/adaptive-interview  
+**Backend repository:** https://github.com/vdung2k6-myna/adaptive-interview-api
 
 ---
 

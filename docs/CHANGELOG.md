@@ -1,25 +1,6 @@
 # Changelog
 
-> **Path migration note:** During the 2026-08 backend extraction, files under `src/app/api/*`, `src/lib/db.ts`, `src/lib/schema.ts`, `src/lib/ollama.ts`, `src/lib/evaluation.ts`, `src/lib/prompts.ts`, `src/lib/embeddings.ts`, `src/lib/seed.ts`, `src/lib/mcp/*`, and most of `src/lib/audio/*` moved to the standalone [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api) repository. Historical entries below still name their original monolith paths. Current frontend files live under `src/app/*`, `src/components/*`, `src/lib/api-client.ts`, `src/lib/config/*`, `src/lib/types.ts`, `src/lib/use-playback-rate.ts`, and `src/lib/audio/sentence-queue.ts`.
-
-## 2026-08-24
-
-### Reconcile Published Repository as Frontend-Only
-
-**Change:** `reconcile-adaptive-interview-frontend`
-
-**Problem:** The published `vdung2k6-myna/adaptive-interview` repository still contained the pre-extraction Next.js monolith (full-stack code with API routes and backend business logic). Active development had moved to a split architecture where `ollama-chat-react` held the frontend and `adaptive-interview-api` held the backend, so the published repo was misleading and out of sync.
-
-**Solution:** Replaced the contents of `adaptive-interview` with the frontend-only codebase, updated all cross-repo references to absolute GitHub URLs, and renamed the package to match the published repository.
-
-**What changed:**
-- Replaced working tree with frontend-only source from `ollama-chat-react`
-- Updated `package.json` / `package-lock.json` name from `ollama-chat-react` to `adaptive-interview`
-- Updated `README.md`, `docs/README.md`, `docs/SETUP.md`, `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, and `CLAUDE.md` to reference the backend via `https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/...` (backend default branch is `master`, not `main`)
-- Updated setup instructions to clone into `adaptive-interview` instead of `ollama-chat-react`
-- Copied active `openspec/` changes and project conventions from `ollama-chat-react`
-
----
+> **Path migration note:** During the 2026-08 backend extraction, files under `src/app/api/*`, `src/lib/db.ts`, `src/lib/schema.ts`, `src/lib/ollama.ts`, `src/lib/evaluation.ts`, `src/lib/prompts.ts`, `src/lib/embeddings.ts`, `src/lib/seed.ts`, `src/lib/mcp/*`, and most of `src/lib/audio/*` moved to the standalone [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api) repository (default branch `master`). Historical entries below still name their original monolith paths. Current frontend files live under `src/app/*`, `src/components/*`, `src/lib/api-client.ts`, `src/lib/config/*`, `src/lib/types.ts`, `src/lib/use-playback-rate.ts`, and `src/lib/audio/sentence-queue.ts`.
 
 ## 2026-08-24
 
@@ -58,7 +39,7 @@
 
 **Solution:** Split documentation ownership between repos:
 - `adaptive-interview-api` now owns backend API reference, architecture, and setup docs.
-- `adaptive-interview` (then `ollama-chat-react`) keeps only frontend-specific docs and links to the backend via sibling-relative paths. These links were later converted to absolute GitHub URLs in the repository reconciliation entry above.
+- `adaptive-interview` keeps only frontend-specific docs and links to the backend via absolute GitHub URLs.
 
 **What changed:**
 - Backend (`adaptive-interview-api`):
@@ -67,7 +48,7 @@
   - Created `docs/SETUP.md` — backend-only setup guide
   - Rewrote `README.md` as a landing page linking to docs
   - Fixed `audio-gateway/README.md` diagram label
-- Frontend (`ollama-chat-react`, now this repo):
+- Frontend (`adaptive-interview`):
   - Rewrote `docs/API.md`, `docs/DATABASE.md`, `docs/SETUP.md`, `docs/ARCHITECTURE.md`, `README.md`
   - Updated `docs/SECURITY.md`, `docs/OLLAMA.md`, `docs/COMPONENTS.md`
   - Added path migration note and dated entry to `docs/CHANGELOG.md`
@@ -75,7 +56,7 @@
 - Validation:
   - Confirmed `npm run build` passes in both repos
   - Confirmed no live references to deleted frontend backend files in docs
-  - Confirmed cross-repo markdown links used sibling-relative paths (`../adaptive-interview-api/...`) at the time
+  - Confirmed cross-repo markdown links point to `https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/...`
 
 ---
 

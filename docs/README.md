@@ -55,8 +55,8 @@ cd adaptive-interview
 npm install
 
 # 2. Clone backend (separate repo)
-git clone https://github.com/vdung2k6-myna/adaptive-interview-api.git ../adaptive-interview-api
-cd ../adaptive-interview-api
+git clone https://github.com/vdung2k6-myna/adaptive-interview-api.git adaptive-interview-api
+cd adaptive-interview-api
 npm install
 
 # 3. Configure environment (see SETUP.md)
@@ -64,7 +64,7 @@ npm install
 #    - Frontend: .env.local (NEXT_PUBLIC_API_TOKEN if auth enabled)
 
 # 4. Start backend (port 4000)
-cd ../adaptive-interview-api
+cd adaptive-interview-api
 npm run dev
 
 # 5. Start frontend (port 3000) — in another terminal

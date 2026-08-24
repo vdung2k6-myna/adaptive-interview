@@ -7,8 +7,8 @@ The Adaptive Interview Engine API is served by the standalone Express backend in
 During development, the frontend's `next.config.ts` rewrites proxy these paths to the backend:
 
 ```
-http://localhost:3000/api/*  â†’  http://localhost:4000/api/*
-http://localhost:3000/audio/* â†’  http://localhost:4000/audio/*
+http://localhost:3000/api/*  →  http://localhost:4000/api/*
+http://localhost:3000/audio/* →  http://localhost:4000/audio/*
 ```
 
 In production, a reverse proxy (nginx, Vercel, etc.) should do the same.

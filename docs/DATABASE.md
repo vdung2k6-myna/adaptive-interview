@@ -2,7 +2,7 @@
 
 ## Important
 
-The Next.js frontend (`adaptive-interview`) has **no database connection**. All database access happens in the standalone Express backend (`adaptive-interview-api`).
+The Next.js frontend (`adaptive-interview`) has **no database connection**. All database access happens in the standalone Express backend ([`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api)).
 
 This document describes the database from the frontend's point of view: what data exists, how the frontend references it, and where the actual schema/migrations live.
 
@@ -26,7 +26,7 @@ The database schema lives in the backend. The tables are:
 | `messages` | Chat messages within a session |
 | `embeddings` | Vector embeddings for semantic topic tracking |
 | `campaigns` | Recruiting campaigns |
-| `campaign_positions` | Many-to-many campaign â†” position junction |
+| `campaign_positions` | Many-to-many campaign ↔ position junction |
 | `evaluationVersions` | Post-interview AI evaluations + human calibration |
 
 For full column definitions, indexes, and migration files, see the backend documentation.
@@ -55,14 +55,14 @@ The frontend loads data via `apiFetch()` from `@/lib/api-client`. There are no s
 
 ```
 Frontend Client Component
-    â”‚
-    â–¼
+    │
+    ▼
 apiFetch("/api/positions")
-    â”‚
-    â–¼
-Next.js dev proxy /api/* â†’ :4000
-    â”‚
-    â–¼
+    │
+    ▼
+Next.js dev proxy /api/* → :4000
+    │
+    ▼
 Express backend (Drizzle + PostgreSQL)
 ```
 
@@ -75,7 +75,7 @@ cd adaptive-interview-api
 npx drizzle-kit migrate
 ```
 
-Never run `npx drizzle-kit migrate` from the frontend repository â€” it has no schema or database connection.
+Never run `npx drizzle-kit migrate` from the frontend repository — it has no schema or database connection.
 
 ## Seeding
 

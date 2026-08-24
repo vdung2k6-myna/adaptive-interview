@@ -8,18 +8,18 @@ Use a **clean-tree replacement** rather than a gradual merge. The target repo `a
 
 ```
 ollama-chat-react/ (source)
-    â”‚
-    â”œâ”€â”€ clean working tree
-    â”‚   (commit or stash pending changes first)
-    â”‚
-    â–¼
+    │
+    ├── clean working tree
+    │   (commit or stash pending changes first)
+    │
+    ▼
 adaptive-interview/ (target)
-    â”‚
-    â”œâ”€â”€ git rm -rf .
-    â”œâ”€â”€ copy source files (respecting ignore rules)
-    â”œâ”€â”€ adapt README/package links
-    â”œâ”€â”€ git add + commit
-    â””â”€â”€ git push
+    │
+    ├── git rm -rf .
+    ├── copy source files (respecting ignore rules)
+    ├── adapt README/package links
+    ├── git add + commit
+    └── git push
 ```
 
 ## Files to Copy
@@ -30,7 +30,7 @@ adaptive-interview/ (target)
 - `public/`
 - `scripts/`
 - `docs/` (frontend-oriented docs)
-- `lib/` (Drizzle config and migrations? â€” verify, frontend repo keeps `drizzle.config.ts` + `migrations/`?)
+- `lib/` (Drizzle config and migrations? — verify, frontend repo keeps `drizzle.config.ts` + `migrations/`?)
 - `*.config.*` (Next, PostCSS, Tailwind, ESLint, TypeScript)
 - `package.json` / `package-lock.json`
 - `README.md`
@@ -83,7 +83,7 @@ Standalone backend API for the [Adaptive Interview Engine](https://github.com/vd
 
 ## `package.json` Name
 
-Change `"name": "ollama-chat-react"` â†’ `"name": "adaptive-interview"` to match the published repo.
+Change `"name": "ollama-chat-react"` → `"name": "adaptive-interview"` to match the published repo.
 
 ## Verification Steps
 
