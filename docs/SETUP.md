@@ -1,6 +1,6 @@
-# Development Setup Guide
+﻿# Development Setup Guide
 
-This guide covers setting up only the **Next.js frontend**. The database, migrations, Ollama integration, and audio services all live in the [backend repository](https://github.com/vdung2k6-myna/adaptive-interview-api). See [adaptive-interview-api/docs/SETUP.md](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/main/docs/SETUP.md) for backend setup.
+This guide covers setting up only the **Next.js frontend**. The database, migrations, Ollama integration, and audio services all live in the [backend repository](https://github.com/vdung2k6-myna/adaptive-interview-api). See [adaptive-interview-api/docs/SETUP.md](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SETUP.md) for backend setup.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ This guide covers setting up only the **Next.js frontend**. The database, migrat
 
 If you don't have the backend running yet, set it up first:
 
-- [Backend Setup Guide](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/main/docs/SETUP.md)
+- [Backend Setup Guide](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SETUP.md)
 
 ## 1. Clone and Install
 
@@ -25,7 +25,7 @@ npm install
 Create `.env.local` in the project root:
 
 ```bash
-# API Authentication (optional — enables Bearer token on all API routes)
+# API Authentication (optional â€” enables Bearer token on all API routes)
 # The backend validates this token; the frontend injects it via apiFetch()
 # NEXT_PUBLIC_API_TOKEN=your-secret-token-here
 ```
@@ -36,14 +36,14 @@ The frontend needs only `NEXT_PUBLIC_API_TOKEN` (and only when the backend has `
 
 You need **both** the backend and frontend running.
 
-### Terminal 1 — Backend
+### Terminal 1 â€” Backend
 
 ```bash
 cd adaptive-interview-api
 npm run dev          # starts Express on port 4000
 ```
 
-### Terminal 2 — Frontend
+### Terminal 2 â€” Frontend
 
 ```bash
 cd adaptive-interview
@@ -56,14 +56,14 @@ The frontend's `next.config.ts` automatically proxies `/api/*` and `/audio/*` re
 
 ## 4. Verify Everything Works
 
-1. **Backend running** — `curl http://localhost:4000/health` should return OK
+1. **Backend running** â€” `curl http://localhost:4000/health` should return OK
 2. **Dashboard** should load at `/dashboard`
 3. **Create a position** at `/positions/new`
 4. **Create a candidate** at `/candidates/new`
 5. **Start an interview** at `/setup` (choose Text or Voice mode)
-6. **Verify streaming** — interviewer messages should appear word-by-word (text mode)
-7. **Verify Markdown rendering** — bold text, lists, code blocks should render correctly
-8. **Complete the interview** — after max turns, evaluation button should appear
+6. **Verify streaming** â€” interviewer messages should appear word-by-word (text mode)
+7. **Verify Markdown rendering** â€” bold text, lists, code blocks should render correctly
+8. **Complete the interview** â€” after max turns, evaluation button should appear
 9. **Voice mode** (if audio stack is running in backend): verify microphone access, recording, and audio playback
 
 ## Frontend Scripts
@@ -97,7 +97,7 @@ Because `next.config.ts` sets `output: "standalone"`, the build produces a self-
 npm run build
 ```
 
-After the build completes, `npm run postbuild` runs automatically and copies `.next/static/` into `.next/standalone/.next/static/`. This is required — Next.js standalone mode does not copy static chunks by default, and without this step you will see `Failed to load chunk` errors in the browser.
+After the build completes, `npm run postbuild` runs automatically and copies `.next/static/` into `.next/standalone/.next/static/`. This is required â€” Next.js standalone mode does not copy static chunks by default, and without this step you will see `Failed to load chunk` errors in the browser.
 
 ### Start the standalone server
 
@@ -117,14 +117,14 @@ PORT=4000 node .next/standalone/server.js
 
 ```
 .next/standalone/
-├── server.js          # Entry point — run this with Node
-├── server.js.map
-└── .next/
-    ├── static/        # JS/CSS chunks copied by postbuild
-    └── server/        # Server chunks
+â”œâ”€â”€ server.js          # Entry point â€” run this with Node
+â”œâ”€â”€ server.js.map
+â””â”€â”€ .next/
+    â”œâ”€â”€ static/        # JS/CSS chunks copied by postbuild
+    â””â”€â”€ server/        # Server chunks
 ```
 
-You can copy just `.next/standalone/` to your production host — no `node_modules` required.
+You can copy just `.next/standalone/` to your production host â€” no `node_modules` required.
 
 ### Deploy with PM2
 
@@ -170,9 +170,9 @@ ollama serve
 
 **Fix:**
 
-- Check browser DevTools Network tab — look for the `POST /api/messages` stream
+- Check browser DevTools Network tab â€” look for the `POST /api/messages` stream
 - Verify the backend is returning `text/plain` NDJSON chunks
-- Some reverse proxies buffer responses — ensure yours doesn't
+- Some reverse proxies buffer responses â€” ensure yours doesn't
 
 ### Voice Interview Not Working
 
@@ -197,7 +197,7 @@ npm run start:audio
 **Fix:**
 
 - Ensure the browser has permission to access the microphone
-- Check browser settings → Privacy → Microphone
+- Check browser settings â†’ Privacy â†’ Microphone
 - Use HTTPS or localhost (MediaRecorder requires secure context)
 
 **Symptom:** Audio files not found (404 on `/audio/...`)
@@ -212,15 +212,15 @@ Audio files are served by the backend. Check:
 
 Recommended VS Code extensions:
 
-- **ESLint** — Code linting
-- **Prettier** — Code formatting
-- **Tailwind CSS IntelliSense** — Autocomplete Tailwind classes
+- **ESLint** â€” Code linting
+- **Prettier** â€” Code formatting
+- **Tailwind CSS IntelliSense** â€” Autocomplete Tailwind classes
 
 ## Next Steps
 
 After setup, read:
 
-- [Architecture](ARCHITECTURE.md) — Understand the frontend's role in the system
-- [Components](COMPONENTS.md) — Learn about React components
-- [Backend Setup Guide](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/main/docs/SETUP.md) — For DB, Ollama, and audio services
-- [Backend API Reference](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/main/docs/API.md) — Full API documentation
+- [Architecture](ARCHITECTURE.md) â€” Understand the frontend's role in the system
+- [Components](COMPONENTS.md) â€” Learn about React components
+- [Backend Setup Guide](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SETUP.md) â€” For DB, Ollama, and audio services
+- [Backend API Reference](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/API.md) â€” Full API documentation

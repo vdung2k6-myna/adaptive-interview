@@ -15,7 +15,7 @@
 **What changed:**
 - Replaced working tree with frontend-only source from `ollama-chat-react`
 - Updated `package.json` / `package-lock.json` name from `ollama-chat-react` to `adaptive-interview`
-- Updated `README.md`, `docs/README.md`, `docs/SETUP.md`, `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, and `CLAUDE.md` to reference the backend via `https://github.com/vdung2k6-myna/adaptive-interview-api/...`
+- Updated `README.md`, `docs/README.md`, `docs/SETUP.md`, `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, and `CLAUDE.md` to reference the backend via `https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/...` (backend default branch is `master`, not `main`)
 - Updated setup instructions to clone into `adaptive-interview` instead of `ollama-chat-react`
 - Copied active `openspec/` changes and project conventions from `ollama-chat-react`
 

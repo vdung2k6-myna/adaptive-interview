@@ -1,4 +1,4 @@
-# API Documentation
+﻿# API Documentation
 
 The Adaptive Interview Engine API is served by the standalone Express backend in `adaptive-interview-api`. The Next.js frontend does not implement any API routes; it delegates every call to the backend.
 
@@ -7,8 +7,8 @@ The Adaptive Interview Engine API is served by the standalone Express backend in
 During development, the frontend's `next.config.ts` rewrites proxy these paths to the backend:
 
 ```
-http://localhost:3000/api/*  →  http://localhost:4000/api/*
-http://localhost:3000/audio/* →  http://localhost:4000/audio/*
+http://localhost:3000/api/*  â†’  http://localhost:4000/api/*
+http://localhost:3000/audio/* â†’  http://localhost:4000/audio/*
 ```
 
 In production, a reverse proxy (nginx, Vercel, etc.) should do the same.
@@ -27,7 +27,7 @@ Frontend components use `apiFetch()` from `@/lib/api-client`, which automaticall
 
 See the backend documentation for the complete REST API:
 
-- **[adaptive-interview-api/docs/API.md](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/main/docs/API.md)**
+- **[adaptive-interview-api/docs/API.md](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/API.md)**
 
 ## Endpoints at a Glance
 

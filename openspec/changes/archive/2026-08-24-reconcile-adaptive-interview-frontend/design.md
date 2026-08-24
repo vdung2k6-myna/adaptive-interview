@@ -1,4 +1,4 @@
-# Design: Reconcile adaptive-interview as Frontend Repo
+﻿# Design: Reconcile adaptive-interview as Frontend Repo
 
 ## Approach
 
@@ -8,18 +8,18 @@ Use a **clean-tree replacement** rather than a gradual merge. The target repo `a
 
 ```
 ollama-chat-react/ (source)
-    │
-    ├── clean working tree
-    │   (commit or stash pending changes first)
-    │
-    ▼
+    â”‚
+    â”œâ”€â”€ clean working tree
+    â”‚   (commit or stash pending changes first)
+    â”‚
+    â–¼
 adaptive-interview/ (target)
-    │
-    ├── git rm -rf .
-    ├── copy source files (respecting ignore rules)
-    ├── adapt README/package links
-    ├── git add + commit
-    └── git push
+    â”‚
+    â”œâ”€â”€ git rm -rf .
+    â”œâ”€â”€ copy source files (respecting ignore rules)
+    â”œâ”€â”€ adapt README/package links
+    â”œâ”€â”€ git add + commit
+    â””â”€â”€ git push
 ```
 
 ## Files to Copy
@@ -30,7 +30,7 @@ adaptive-interview/ (target)
 - `public/`
 - `scripts/`
 - `docs/` (frontend-oriented docs)
-- `lib/` (Drizzle config and migrations? — verify, frontend repo keeps `drizzle.config.ts` + `migrations/`?)
+- `lib/` (Drizzle config and migrations? â€” verify, frontend repo keeps `drizzle.config.ts` + `migrations/`?)
 - `*.config.*` (Next, PostCSS, Tailwind, ESLint, TypeScript)
 - `package.json` / `package-lock.json`
 - `README.md`
@@ -68,9 +68,9 @@ With:
 
 ```markdown
 [Adaptive Interview API](https://github.com/vdung2k6-myna/adaptive-interview-api)
-[Backend Setup Guide](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/main/docs/SETUP.md)
-[Backend API Reference](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/main/docs/API.md)
-[Backend Architecture](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/main/docs/ARCHITECTURE.md)
+[Backend Setup Guide](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SETUP.md)
+[Backend API Reference](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/API.md)
+[Backend Architecture](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/ARCHITECTURE.md)
 ```
 
 ### `adaptive-interview-api/README.md`
@@ -83,7 +83,7 @@ Standalone backend API for the [Adaptive Interview Engine](https://github.com/vd
 
 ## `package.json` Name
 
-Change `"name": "ollama-chat-react"` → `"name": "adaptive-interview"` to match the published repo.
+Change `"name": "ollama-chat-react"` â†’ `"name": "adaptive-interview"` to match the published repo.
 
 ## Verification Steps
 
