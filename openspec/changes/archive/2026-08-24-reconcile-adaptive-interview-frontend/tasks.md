@@ -28,7 +28,7 @@
 
 - [x] Update `adaptive-interview-api/README.md` frontend link to absolute GitHub URL
 - [x] Update `adaptive-interview-api/docs/*.md` if they reference the frontend repo relatively
-- [ ] Commit and push backend repo link fixes
+- [x] Commit and push backend repo link fixes
 
 ## Verify Target Repo
 
@@ -42,14 +42,14 @@
 
 ## Commit and Publish
 
-- [ ] Stage all changes in `adaptive-interview`
-- [ ] Write migration commit message describing the replacement
-- [ ] Push to `origin/main` (or current default branch)
-- [ ] Verify GitHub reflects the new frontend-only tree
+- [x] Stage all changes in `adaptive-interview`
+- [x] Write migration commit message describing the replacement
+- [x] Push to `origin/main` (or current default branch)
+- [x] Verify GitHub reflects the new frontend-only tree
 - [ ] Optionally create a GitHub release note or tag documenting the split
 
 ## Close OpenSpec Change
 
-- [ ] Update this OpenSpec change status to completed
-- [ ] Archive this change under `openspec/changes/archive/`
-- [ ] Update `docs/OPENSPEC.md` if workflow details changed
+- [x] Update this OpenSpec change status to completed
+- [x] Archive this change under `openspec/changes/archive/`
+- [x] Update `docs/OPENSPEC.md` if workflow details changed
