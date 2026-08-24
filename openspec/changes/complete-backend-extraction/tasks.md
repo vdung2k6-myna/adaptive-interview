@@ -35,7 +35,12 @@
 - [x] Adapt to Express SSE response — created `ExpressSseTransport` using `res.write()` instead of ReadableStream
 - [x] Verify `@modelcontextprotocol/sdk` Server integrates with Express — server.connect(transport) works with new transport
 - [x] Test SSE connection: `curl -N http://localhost:4000/api/mcp -H "Accept: text/event-stream"` — SSE stream established (hangs waiting for events, as expected)
-- [ ] Test tool calls (analytics, candidates, positions) via MCP inspector or custom client
+- [x] Test tool calls (analytics, candidates, positions) via MCP inspector or custom client — verified with custom Node client against localhost:4000
+  - Connected SSE with `Authorization: Bearer` header
+  - Received `endpoint` event with sessionId
+  - `initialize` returned protocolVersion `2024-11-05`
+  - `tools/list` returned 6 tools: listCampaigns, getCampaignAnalytics, listSessions, getSessionSummary, listPositions, searchCandidatesBySkill
+  - Called and received results for: listPositions, searchCandidatesBySkill({skill:"TypeScript"}), listCampaigns, getCampaignAnalytics({campaignId})
 
 ## Phase 5: CRUD Route Verification
 
@@ -67,7 +72,8 @@
 
 - [x] Text interview: create candidate → create session → start interview (POST /api/messages) → returns first question
 - [x] Voice interview: create session → start voice (POST /api/voice/start) → receive audio response
-- [ ] MCP: connect SSE → list tools → call `get_interview_analytics` → receive data
+- [x] MCP: connect SSE → list tools → call analytics tool → receive data — verified against localhost:4000/api/mcp
+  - Note: registered analytics tool is named `getCampaignAnalytics`; `get_interview_analytics` does not exist in the backend MCP server
 - [x] Auth: call without token → 401; call with valid token → 200 (verified)
 - [x] CORS: frontend on :3000 can call backend on :4000 — preflight OPTIONS and actual GET both succeed with correct headers
 
