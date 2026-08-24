@@ -39,10 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+pipervoices*
 
-# openspec
-openspec/
-
-# claude
-.claude
-
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+env/
+venv/
+*.egg-info/
+dist/
+build/

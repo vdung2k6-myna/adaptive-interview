@@ -1,5 +1,5 @@
 {
-  "name": "ollama-chat-react",
+  "name": "adaptive-interview",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,9 +9,11 @@
     "build": "next build",
     "postbuild": "node scripts/postbuild.mjs",
     "start": "node .next/standalone/server.js",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:readme": "node scripts/check-readme.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@supabase/supabase-js": "^2.97.0",
     "dompurify": "^3.4.13",
     "dotenv": "^17.4.2",
@@ -21,7 +23,8 @@
     "next": "16.1.6",
     "pg": "^8.22.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

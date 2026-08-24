@@ -106,21 +106,19 @@ created: 2026-08-08
 ```
 $ openspec list --json
 {
-  "changes": [
-    {
-      "name": "rich-llm-chat-output",
-      "completedTasks": 7,
-      "totalTasks": 7,
-      "status": "done"
-    }
-  ]
+  "changes": []
 }
 ```
+
+All recent changes have been archived. See `openspec/changes/archive/` for completed history.
 
 ## Archived Changes
 
 | Date | Change | Description |
 |------|--------|-------------|
+| 2026-08-24 | `resync-docs-after-backend-extraction` | Resynced frontend and backend documentation after backend extraction |
+| 2026-08-22 | `consolidate-audio-services-in-backend` | Moved all audio services to backend repo |
+| 2026-08-22 | `complete-backend-extraction` | Extracted all API routes into standalone Express server |
 | 2026-08-08 | `adaptive-interview-engine` | Dynamic questioning based on answers |
 | 2026-08-08 | `semantic-topic-tracking` | Coverage analysis via embeddings |
 | 2026-08-08 | `real-time-ollama-streaming` | Token-by-token streaming |

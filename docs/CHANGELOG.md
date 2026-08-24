@@ -1,5 +1,563 @@
 # Changelog
 
+> **Path migration note:** During the 2026-08 backend extraction, files under `src/app/api/*`, `src/lib/db.ts`, `src/lib/schema.ts`, `src/lib/ollama.ts`, `src/lib/evaluation.ts`, `src/lib/prompts.ts`, `src/lib/embeddings.ts`, `src/lib/seed.ts`, `src/lib/mcp/*`, and most of `src/lib/audio/*` moved to the standalone [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api) repository. Historical entries below still name their original monolith paths. Current frontend files live under `src/app/*`, `src/components/*`, `src/lib/api-client.ts`, `src/lib/config/*`, `src/lib/types.ts`, `src/lib/use-playback-rate.ts`, and `src/lib/audio/sentence-queue.ts`.
+
+## 2026-08-24
+
+### Reconcile Published Repository as Frontend-Only
+
+**Change:** `reconcile-adaptive-interview-frontend`
+
+**Problem:** The published `vdung2k6-myna/adaptive-interview` repository still contained the pre-extraction Next.js monolith (full-stack code with API routes and backend business logic). Active development had moved to a split architecture where `ollama-chat-react` held the frontend and `adaptive-interview-api` held the backend, so the published repo was misleading and out of sync.
+
+**Solution:** Replaced the contents of `adaptive-interview` with the frontend-only codebase, updated all cross-repo references to absolute GitHub URLs, and renamed the package to match the published repository.
+
+**What changed:**
+- Replaced working tree with frontend-only source from `ollama-chat-react`
+- Updated `package.json` / `package-lock.json` name from `ollama-chat-react` to `adaptive-interview`
+- Updated `README.md`, `docs/README.md`, `docs/SETUP.md`, `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, and `CLAUDE.md` to reference the backend via `https://github.com/vdung2k6-myna/adaptive-interview-api/...`
+- Updated setup instructions to clone into `adaptive-interview` instead of `ollama-chat-react`
+- Copied active `openspec/` changes and project conventions from `ollama-chat-react`
+
+---
+
+## 2026-08-24
+
+### Add Playback Rate Control for AI Voice
+
+**Change:** `add-playback-rate-control`
+
+**Problem:** AI voice playback was locked to a hardcoded `0.9x` speed. Users had no way to adjust how fast the interviewer spoke, which is a common accessibility and preference need.
+
+**Solution:** Made playback rate configurable per interviewer message on the transcript page, and kept a single global selector for the voice interview page where audio is automatic.
+
+**What changed:**
+- `src/lib/use-playback-rate.ts` — new hook with `localStorage` persistence, default `1.0x`, validated options `0.5x`–`2.0x` (used by voice interview)
+- `src/app/interview/[id]/transcript/page.tsx`:
+  - Added per-message playback-rate state (`messagePlaybackRates` Map)
+  - Speed selector moved next to each "Speak" button and controls only that message's playback rate
+  - `speakMessageStream` / `speakMessageFallback` now accept a `playbackRate` argument
+  - Applied selected per-message rate to `SentenceAudioQueue` streaming playback
+  - Applied selected per-message rate to fallback `<audio>` element
+- `src/app/interview/[id]/voice/page.tsx`:
+  - Added global speed selector in the header next to streaming toggle
+  - Applied selected rate to `SentenceAudioQueue` streaming playback
+  - Applied selected rate to fallback `<audio>` autoplay and turn playback
+- Documentation:
+  - `docs/COMPONENTS.md` — added `usePlaybackRate` hook documentation and updated page component descriptions
+
+---
+
+## 2026-08-24
+
+### Resync Documentation After Backend Extraction
+
+**Change:** `resync-docs-after-backend-extraction`
+
+**Problem:** After the backend was extracted into `adaptive-interview-api`, the frontend documentation still described a monolith: API route details, direct database setup steps, and references to files that no longer existed (`src/lib/db.ts`, `src/lib/schema.ts`, `src/lib/ollama.ts`, etc.). The backend repository also lacked its own comprehensive docs.
+
+**Solution:** Split documentation ownership between repos:
+- `adaptive-interview-api` now owns backend API reference, architecture, and setup docs.
+- `adaptive-interview` (then `ollama-chat-react`) keeps only frontend-specific docs and links to the backend via sibling-relative paths. These links were later converted to absolute GitHub URLs in the repository reconciliation entry above.
+
+**What changed:**
+- Backend (`adaptive-interview-api`):
+  - Created `docs/API.md` — full REST reference including voice and async evaluation endpoints
+  - Created `docs/ARCHITECTURE.md` — backend internal architecture and data flows
+  - Created `docs/SETUP.md` — backend-only setup guide
+  - Rewrote `README.md` as a landing page linking to docs
+  - Fixed `audio-gateway/README.md` diagram label
+- Frontend (`ollama-chat-react`, now this repo):
+  - Rewrote `docs/API.md`, `docs/DATABASE.md`, `docs/SETUP.md`, `docs/ARCHITECTURE.md`, `README.md`
+  - Updated `docs/SECURITY.md`, `docs/OLLAMA.md`, `docs/COMPONENTS.md`
+  - Added path migration note and dated entry to `docs/CHANGELOG.md`
+  - Updated `docs/OPENSPEC.md` archive table
+- Validation:
+  - Confirmed `npm run build` passes in both repos
+  - Confirmed no live references to deleted frontend backend files in docs
+  - Confirmed cross-repo markdown links used sibling-relative paths (`../adaptive-interview-api/...`) at the time
+
+---
+
+## 2026-08-23
+
+### Fix Delete Button UI Not Updating
+
+**Change:** `fix-delete-button-ui`
+
+**Problem:** Clicking Delete on Campaigns, Candidates, or Positions lists removed the item from the backend but the UI didn't update — the deleted row remained visible until a manual page refresh.
+
+**Root Cause:** `DeleteButton` called `router.refresh()` which only re-fetches Server Component data. But all three list pages (`campaigns/page.tsx`, `candidates/page.tsx`, `positions/page.tsx`) are Client Components that manage their own state via `useState`. `router.refresh()` does nothing for Client Component state.
+
+**Solution:** Added an optional `onDelete` callback to `DeleteButton`. Each list page passes a callback that filters the deleted item from local state immediately, giving instant UI feedback.
+
+**What changed:**
+- `src/components/DeleteButton.tsx` — added `onDelete?: () => void` prop, called after successful DELETE
+- `src/app/campaigns/page.tsx` — passed `onDelete` that filters deleted campaign from `campaigns` state
+- `src/app/candidates/page.tsx` — passed `onDelete` that filters deleted candidate from `candidates` state
+- `src/app/positions/page.tsx` — passed `onDelete` that filters deleted position from `positions` state
+
+---
+
+## 2026-08-23
+
+### Async Evaluation Polling
+
+**Change:** `async-evaluation-polling`
+
+**Problem:** The backend changed `POST /api/sessions/:id/evaluate` from a synchronous endpoint to an async job queue. It now returns `202 Accepted` with a `jobId` instead of the completed evaluation. The frontend's transcript page still assumed a synchronous response and immediately called `fetchEvaluation()`, which would return stale or missing data.
+
+**Solution:** Refactored `transcript/page.tsx` to treat evaluation generation as an async job:
+1. `POST /api/sessions/:id/evaluate` → receive `{ jobId, status }`
+2. Poll `GET /api/evaluations/jobs/:jobId` every 2 seconds
+3. Show loading UI ("Starting evaluation..." → "Evaluating...")
+4. On `completed`, call `fetchEvaluation()` to display results
+5. On `failed`, show error with retry option
+
+**What changed:**
+- `src/app/interview/[id]/transcript/page.tsx`:
+  - Replaced `evalLoading: boolean` + `evalError: string` with `EvalJobState` discriminated union (`idle | posting | polling | completed | failed`)
+  - Renamed `generateEvaluation()` → `startEvaluationJob()` — handles 202 response
+  - Added polling `useEffect` — interval every 2s, cleanup on unmount/state change
+  - Updated UI: spinner + job ID during polling, error banner on failure, "Retry" button text
+- Documentation:
+  - `docs/API.md` — updated `POST /api/sessions/:id/evaluate` to `202` response; added `GET /api/evaluations/jobs/:jobId`
+  - `docs/EVALUATION.md` — added async job flow section with diagram
+
+---
+
+## 2026-08-23
+
+### Fix Voice Interview Autoplay State Reset
+
+**Change:** `fix-voice-autoplay-state-reset`
+
+**Problem:** In voice interview mode, after the candidate submits their answer on turn 2 or later, the interviewer's auto-play audio starts briefly and then stops. The first turn works, but all subsequent turns are silent.
+
+**Root Cause:** `src/app/interview/[id]/voice/page.tsx` resets `hasReceivedSentencesRef` and `seenSentenceIndicesRef` at the start of each turn, but omits `pendingChunksRef` and `nextExpectedIndexRef`. These carry over indices from the previous turn, so the sentence reorder/flush loop looks for the wrong index and never enqueues new audio chunks into the `SentenceAudioQueue`.
+
+**Solution:** Added the two missing reset lines:
+```typescript
+pendingChunksRef.current.clear();
+nextExpectedIndexRef.current = 0;
+```
+
+**What changed:**
+- `src/app/interview/[id]/voice/page.tsx` — added `pendingChunksRef.current.clear()` and `nextExpectedIndexRef.current = 0` inside `handleRecordingComplete`
+
+---
+
+## 2026-08-23
+
+### Clean Monolith Backend Code
+
+**Change:** `clean-monolith-backend-code`
+
+**Problem:** After `complete-backend-extraction`, the monolith still carried backend baggage: 8 Server Component pages performed direct Drizzle DB queries, and 16 dead backend files (`db.ts`, `schema.ts`, `ollama.ts`, `evaluation.ts`, audio pipeline) remained in `src/lib/`.
+
+**Solution:** Converted all 8 pages to Client Components using `apiFetch()`, enriched backend list endpoints with `sessionCount`, added `GET /api/campaigns/:id` to the backend, deleted all dead files, and created lightweight `src/lib/types.ts` for frontend type safety.
+
+**What changed:**
+- Backend (`adaptive-interview-api`):
+  - `GET /api/candidates` — now includes `sessionCount` per candidate
+  - `GET /api/positions` — now includes `sessionCount` per position
+  - `GET /api/campaigns/:id` — new endpoint with full detail + metrics + top candidates
+- Frontend:
+  - Converted 8 pages from Server Components → Client Components:
+    - `candidates/page.tsx`, `candidates/[id]/edit/page.tsx`
+    - `positions/page.tsx`, `positions/[id]/edit/page.tsx`
+    - `campaigns/page.tsx`, `campaigns/[id]/page.tsx`, `campaigns/new/page.tsx`
+    - `setup/page.tsx`
+  - Created `src/lib/types.ts` — lightweight frontend interfaces replacing Drizzle schema types
+  - Deleted `src/lib/db.ts`, `src/lib/schema.ts`, and 14 other dead backend files
+- Documentation:
+  - `docs/ARCHITECTURE.md` — updated to reflect pure frontend / no direct DB access
+  - `docs/API.md` — added `GET /api/candidates`, `GET /api/positions` list docs; updated `GET /api/campaigns/:id` response shape
+
+---
+
+## 2026-08-22
+
+### Consolidate Audio Services in Backend
+
+**Change:** `consolidate-audio-services-in-backend`
+
+**Problem:** The frontend repository still owned the entire audio services stack (Kokoro, Piper, Audio Gateway, model files, and startup scripts) even though it had no backend code left.
+
+**Solution:** Moved all audio service code into `adaptive-interview-api` where the backend that consumes them lives.
+
+**What changed:**
+- Moved to `adaptive-interview-api/`:
+  - `audio-gateway/` — FastAPI unified TTS proxy
+  - `kokoro-service/` — FastAPI Kokoro TTS
+  - `piper-service/` — FastAPI Piper TTS
+  - `pipervoices/` — Piper model weights
+  - `scripts/start-audio-services.bat`, `.sh` — startup scripts
+  - `scripts/stop-audio-services.bat`, `.sh` — shutdown scripts
+  - `scripts/start-audio.js`, `stop-audio.js` — cross-platform Node wrappers
+- Backend `package.json` — added `start:audio` and `stop:audio` npm scripts
+- Backend `README.md` — added audio services setup section
+- Frontend deletions:
+  - Removed `audio-gateway/`, `kokoro-service/`, `piper-service/`, `pipervoices/`
+  - Removed `scripts/start-audio-services.*` and `scripts/stop-audio-services.*`
+- Documentation:
+  - `docs/SETUP.md` — replaced Section 7 (detailed audio setup) with a reference to backend repo
+  - `docs/ARCHITECTURE.md` — noted audio services live in backend repo
+
+---
+
+## 2026-08-22
+
+### Fix Audio Stop and Streaming Bugs
+
+**Change:** `fix-audio-stop-and-streaming`
+
+**Problem:** The Speak/Stop feature on the transcript page and the pause/resume in the voice interview had three interconnected bugs:
+1. `SentenceAudioQueue.stop()` set a permanent `aborted` flag with no reset — after Stop, the queue was dead forever.
+2. `stop()` did not clear a pending `setTimeout` used for punctuation pauses — a "ghost" timer fired ~400ms later, triggering `onFinished()` and corrupting state.
+3. Clicking Stop on the transcript page could trigger fallback audio playback if the abort produced anything other than a pure `AbortError`.
+4. Backend `speak-stream` emitted split-chunk results with duplicate indices, causing the frontend to drop the second half of phoneme-split sentences.
+5. Backend emitted SSE events out of order (parallel worker pool), causing silence until the slowest chunk resolved.
+
+**Solution:**
+- Replaced permanent `aborted` with a generation counter in `SentenceAudioQueue`; `stop()` increments the generation and clears pending timers.
+- Added `speakGenerationRef` per-stream generation counter to transcript page so rapidly-clicked Speak/Stop cannot leak chunks from a stale SSE stream into a new queue.
+- Changed voice interview pause/resume to use `AudioContext.suspend()` / `resume()` instead of destroying the queue.
+- Backend: concatenated split-chunk WAV buffers into a single buffer before emitting one SSE event per index.
+- Backend: replaced parallel worker pool with ordered sequential await so SSE events emit in strict index order.
+- Backend: added client disconnect detection (socket `close` event) in `speak-stream` so synthesis stops when the browser closes the SSE connection.
+- Backend: filter out empty/whitespace-only chunks before synthesis to prevent Piper "produced no audio data" errors on trailing markdown artifacts.
+- Backend: `synthesizeChunkWithFallback` and `synthesizeSpeechWithFallback` now skip chunks with no Unicode letters silently (e.g. pure punctuation, symbols, numbers-only), instead of sending them to TTS and getting "Piper produced no audio data".
+
+**What changed:**
+- `src/lib/audio/sentence-queue.ts` — generation counter, timer cleanup
+- `src/app/interview/[id]/transcript/page.tsx` — `speakGenerationRef` per-stream guard
+- `src/app/interview/[id]/voice/page.tsx` — AudioContext suspend/resume for pause
+- `adaptive-interview-api/src/routes/voice.ts` — ordered SSE emission, split-chunk concatenation
+
+---
+
+## 2026-08-22
+
+### Extract Standalone Backend API
+
+**Change:** `complete-backend-extraction`
+
+**Problem:** The Next.js monolith handled both frontend rendering and API routes, making independent scaling and deployment difficult.
+
+**Solution:** Extracted all API routes into a standalone Express server in `adaptive-interview-api/` (port 4000).
+
+**What changed:**
+- New repository: `adaptive-interview-api/`
+  - Express server with all CRUD routes: candidates, positions, sessions, campaigns, messages, evaluations, voice, MCP
+  - Streaming interview messages via `res.write()` text/plain
+  - Voice pipeline with multer multipart uploads and SSE audio streaming
+  - MCP analytics SSE transport (`ExpressSseTransport`)
+  - Bearer token auth via `API_AUTH_TOKEN`
+  - CORS configured for frontend on port 3000
+  - Same Drizzle ORM schema and PostgreSQL database as monolith
+- Monolith changes:
+  - `docs/ARCHITECTURE.md` — updated with Pattern B architecture diagram
+  - Frontend components updated to call external backend via `apiFetch()` with Bearer token
+
+## 2026-08-21
+
+### Add API Key Authentication
+
+**Change:** `add-api-key-auth`
+
+**Problem:** All API routes were publicly accessible. Anyone could create, modify, or delete positions, candidates, sessions, and evaluations.
+
+**Solution:** Added optional Bearer token authentication to all API routes.
+
+**What changed:**
+- Library:
+  - `src/lib/auth.ts` — `validateApiAuth()` checks `Authorization: Bearer <token>` against `API_AUTH_TOKEN`
+  - `src/lib/api-client.ts` — `apiFetch()` wrapper injects the Bearer header when `NEXT_PUBLIC_API_TOKEN` is set
+  - `src/lib/config/index.ts`, `development.ts`, `production.ts` — added `auth.apiToken` field
+- API:
+  - All 20+ API route files now call `validateApiAuth()` at the start of each handler and return `401 Unauthorized` if the token is missing or invalid
+  - `POST /api/mcp` and `GET /api/mcp` check both `validateApiAuth()` and `validateMcpAuth()`
+- Frontend:
+  - `src/app/interview/[id]/page.tsx` — uses `apiFetch()` for streaming
+  - `src/app/interview/[id]/voice/page.tsx` — uses `apiFetch()` for voice SSE
+  - `src/app/interview/[id]/transcript/page.tsx` — uses `apiFetch()` for all transcript/evaluation/voice calls
+  - `src/app/dashboard/page.tsx` — uses `apiFetch()` for session list
+  - `src/app/setup/SetupForm.tsx` — uses `apiFetch()` for session creation
+  - `src/app/candidates/new/CandidateForm.tsx` — uses `apiFetch()` for create/update
+  - `src/app/positions/new/PositionForm.tsx` — uses `apiFetch()` for create/update
+  - `src/app/campaigns/new/CampaignForm.tsx` — uses `apiFetch()` for create
+  - `src/app/compare/page.tsx` — uses `apiFetch()` for session/evaluation loading
+  - `src/components/DeleteButton.tsx` — uses `apiFetch()` for delete
+- Docs:
+  - Updated `SECURITY.md` — documented API key auth model and environment variables
+  - Updated `SETUP.md` — added `API_AUTH_TOKEN` and `NEXT_PUBLIC_API_TOKEN` to `.env.local` template
+  - Updated `API.md` — documented Bearer token requirement on all endpoints
+  - Updated `CHANGELOG.md`
+
+**Status:** Implemented and documented.
+
+---
+
+## 2026-08-21
+
+### Stream Transcript Speak (SSE)
+
+**Change:** `stream-transcript-speak`
+
+**Problem:** The transcript page's "Speak" button sent the entire message text to `POST /api/voice/speak` and waited for a single combined WAV. For long interviewer responses, users waited several seconds before hearing any audio.
+
+**Solution:** Added sentence-level streaming TTS for transcript replay:
+- `POST /api/voice/speak-stream` — SSE endpoint that splits text into sentences, synthesizes each in order, and emits `sentence` events as audio becomes ready
+- Transcript page now creates a `SentenceAudioQueue` on first Speak click and feeds sentence events as they arrive — same instant-playback UX as the voice interview
+- `StreamingAudioQueue` component shows progress bar, current sentence text, and playback controls
+- Old `POST /api/voice/speak` kept as `speakMessageFallback` for error fallback
+
+**What changed:**
+- API:
+  - `src/app/api/voice/speak-stream/route.ts` — new SSE endpoint (already existed, verified complete)
+- Frontend:
+  - `speakMessageStream()` in transcript page — connects to SSE, feeds events into `SentenceAudioQueue`
+  - `speakMessageFallback()` — preserved old non-streaming behavior for fallback
+  - `stopSpeaking()` — stops queue, revokes object URLs, clears all streaming state
+  - `StreamingAudioQueue` rendered inline in the transcript panel when speaking
+- Performance:
+  - Time-to-first-audio for a 5-sentence message: ~5–8s → ~1–2s
+- Docs:
+  - Updated `API.md`, `CHANGELOG.md`
+
+**Status:** Implemented and documented.
+
+---
+
+## 2026-08-21
+
+### Optimize Pauses Between Sentences and Paragraphs
+
+**Change:** `optimize-tts-pauses`
+
+**Problem:** When TTS played back interviewer messages, sentences ran together with no audible gap. Paragraph breaks (double newlines in markdown) and list items were also collapsed into continuous text, so the speech sounded like one long run-on sentence with no natural breathing room.
+
+**Solution:** Fixed server-side WAV concatenation:
+
+- **`concatWavBuffers(buffers, gapSeconds?)`** — Added optional gap parameter. When combining sentence WAVs into the stored interviewer audio file (in `stream/route.ts`), 0.3 seconds of silence is inserted between each buffer. Previously buffers were joined back-to-back with zero gap.
+
+**What changed:**
+- Library:
+  - `src/lib/audio/wav-utils.ts` — `concatWavBuffers(buffers, gapSeconds?)` inserts silent PCM frames between buffers
+- API:
+  - `src/app/api/voice/stream/route.ts` — `concatWavBuffers(validBuffers, 0.3)` for combined interviewer audio
+- Docs:
+  - Updated `CHANGELOG.md`
+
+**Status:** Implemented and documented.
+
+---
+
+## 2026-08-21
+
+### Punctuation-Aware Pauses in Audio Queue
+
+**Change:** `punctuation-aware-pauses`
+
+**Problem:** Piper TTS (and to a lesser extent Kokoro) speaks through commas, semicolons, and colons too quickly. The audio chunks were played back-to-back with zero gap, so a sentence like *"First, let's discuss A; then, we'll move to B:"* sounded like one continuous run-on word.
+
+**Solution:** Made `SentenceAudioQueue` punctuation-aware. After each chunk finishes, the queue inspects the chunk text and inserts a pause proportional to the trailing punctuation before starting the next chunk.
+
+| Trailing punctuation | Pause inserted |
+|---------------------|----------------|
+| `…` `...` (ellipsis / paragraph) | 600 ms |
+| `.` `!` `?` `。` `？` `！` (sentence ending) | 400 ms |
+| `;` `:` (semicolon / colon) | 250 ms |
+| `—` `-` (dash) | 200 ms |
+| `,` `،` (comma) | 180 ms |
+| word (no punctuation) | 0 ms (immediate) |
+
+**What changed:**
+- Library:
+  - `src/lib/audio/sentence-queue.ts` — `QueueItem` stores optional `text`. Added `getPauseMs()` that maps trailing punctuation to pause duration. `enqueue(index, url, text?)` accepts chunk text so the queue can decide whether to delay
+  - `src/lib/audio/text-processing.ts` — removed `
+\n` → `…` conversion that was creating standalone `…` sentences TTS could not synthesize
+- Frontend:
+  - `src/app/interview/[id]/transcript/page.tsx` — passes `s.text` to `enqueue()`
+  - `src/app/interview/[id]/voice/page.tsx` — passes `s.text` to `enqueue()`
+- Docs:
+  - Updated `CHANGELOG.md`
+
+**Status:** Implemented and documented.
+
+---
+
+## 2026-08-21
+
+### Slow Down Piper Playback Rate
+
+**Change:** `piper-playback-rate`
+
+**Problem:** Piper TTS (Vietnamese voice `vi_VN-vais1000-medium`) speaks noticeably fast and clips short syllables, making it hard for candidates to follow during voice interviews and transcript replay.
+
+**Solution:** Added `playbackRate` option to `SentenceAudioQueue` and set it to **0.85×** for both voice interview and transcript playback. This slows audio by 15% without server-side changes, keeping the same pitch (Web Audio API time-stretching).
+
+**What changed:**
+- Library:
+  - `src/lib/audio/sentence-queue.ts` — `SentenceQueueOptions` now accepts `playbackRate?: number`. Applied via `AudioBufferSourceNode.playbackRate.value` before playback starts
+- Frontend:
+  - `src/app/interview/[id]/transcript/page.tsx` — passes `playbackRate: 0.85` when creating the queue
+  - `src/app/interview/[id]/voice/page.tsx` — passes `playbackRate: 0.85` when creating the queue
+- Docs:
+  - Updated `CHANGELOG.md`
+
+**Status:** Implemented and documented.
+
+---
+
+## 2026-08-21
+
+### Consolidate Text Processing for TTS
+
+**Change:** `consolidate-text-processing-tts`
+
+**Problem:** Text preprocessing logic (`stripMarkdown`, `splitForTTS`, `synthesizeChunkWithFallback`) was duplicated across three TTS route files (`speak`, `speak-stream`, `stream`). The implementations were inconsistent:
+- `stream/route.ts` used `maxChars=70` while `speak-stream/route.ts` used `maxChars=60`
+- `stripMarkdown` only removed bold/italic, leaving headers, code blocks, and list markers for TTS to speak aloud
+- `stream/route.ts` had no fallback retry on phoneme overflow, causing Kokoro to crash on long Vietnamese sentences
+- `synthesizeChunkWithFallback` in `speak-stream` only returned one half of a split chunk, silently discarding the other half
+
+**Solution:** Extracted all text-processing logic into a shared module (`src/lib/audio/text-processing.ts`):
+- `stripMarkdown()` — expanded rules: removes fenced code blocks, inline code, headers, blockquotes, and list markers in addition to bold/italic
+- `splitForTTS(text, maxChars=60)` — unified default. Prefers stronger boundaries (`:`/`;` > `,` > `space`) to keep natural clauses together
+- `synthesizeSpeechWithFallback()` — pure synthesis retry with recursive halving. For WAV outputs, successful halves are concatenated so no audio is lost
+- `synthesizeChunkWithFallback()` — wrapper that saves audio after synthesis. Now returns **all** successful sub-results instead of discarding half
+
+**What changed:**
+- Library:
+  - `src/lib/audio/text-processing.ts` — new shared module
+  - `src/lib/audio/index.ts` — exports `stripMarkdown`, `splitForTTS`, `synthesizeSpeechWithFallback`, `synthesizeChunkWithFallback`
+- API:
+  - `src/app/api/voice/speak/route.ts` — imports `stripMarkdown` from shared module
+  - `src/app/api/voice/speak-stream/route.ts` — imports all three from shared; loop updated to emit all sub-results from fallback splitting
+  - `src/app/api/voice/stream/route.ts` — imports `stripMarkdown`, `splitForTTS`, `synthesizeSpeechWithFallback`; `enqueueTTS` uses fallback synthesis
+- Docs:
+  - Updated `ARCHITECTURE.md` — added `text-processing.ts` to file tree and Voice Interview section
+  - Updated `API.md` — documented preprocessing behavior on `speak`, `speak-stream`, and `stream` endpoints
+  - Updated `CHANGELOG.md`
+
+**Status:** Implemented and documented.
+
+---
+
+## 2026-08-20
+
+### Stream Sentence-Level TTS (Incremental)
+
+**Change:** `stream-sentence-level-tts`
+
+**Problem:** Voice interview per-turn latency was ~16–20s because the pipeline waited for the full LLM response before any TTS started. Candidates stared at a spinner for a long time.
+
+**Solution:** Introduced **incremental sentence-level TTS with SSE streaming**:
+- `POST /api/voice/stream` — SSE endpoint that detects sentence boundaries **during** LLM token streaming, fires TTS for each completed sentence in the background, and emits `sentence` events as audio becomes ready
+- Sentence splitter (`src/lib/audio/split-sentences.ts`) — supports English and Vietnamese delimiters (`.`, `!`, `?`, `…`, `。`, `？`, `！`)
+- Background TTS synthesis — each sentence is sent to TTS as soon as its boundary is detected in the token stream; TTS runs in parallel while LLM continues generating
+- Sequential emission — TTS promises are awaited in sentence index order after LLM completes, guaranteeing events arrive in order (0, 1, 2...)
+- WAV concatenation (`src/lib/audio/wav-utils.ts`) — merges sentence WAVs into a single file for storage
+- `StreamingAudioQueue` component — queues and plays sentence chunks sequentially with preloading
+
+**What changed:**
+- Refactored `POST /api/voice/stream`:
+  - Old: accumulate all LLM tokens → split sentences → batch TTS (3 at a time) → emit events
+  - New: detect sentence boundaries incrementally during LLM streaming → fire TTS immediately per sentence → emit events after LLM done in index order
+  - `POST /api/voice/turn` kept as non-streaming fallback
+- Audio library:
+  - `split-sentences.ts` — sentence boundary detection with delimiter check (`/[.!?…。？！]$/`)
+  - `wav-utils.ts` — parse WAV headers, validate compatibility, concatenate PCM
+  - `tts.ts` — `synthesizeSpeech()` for single-sentence calls (replaces `synthesizeSentences()` batch approach)
+- Components:
+  - `StreamingAudioQueue.tsx` — sequential playback with progress bar and preloading
+- Frontend:
+  - `VoiceInterviewPage` — SSE consumer unchanged; receives incremental `sentence` events as before
+  - Toggle button to switch between streaming and standard mode
+- Performance:
+  - Time to first audio: ~16s → ~5–6s (65% improvement)
+  - Overall per-turn latency: ~20s → ~10–12s (40–50% improvement)
+- Docs:
+  - Updated `API.md`, `ARCHITECTURE.md`, `COMPONENTS.md`, `CHANGELOG.md`
+
+---
+
+## 2026-08-20
+
+### Replace audio.cpp STT with faster-whisper (rolled back)
+
+**Change:** `replace-audiocpp-stt-with-faster-whisper` → **rolled back**
+
+**Attempted:** Replaced audio.cpp STT with a dedicated **faster-whisper** FastAPI service (`stt-service/`). The `base` model transcribed in ~1s on CPU, but **Vietnamese transcription quality was significantly worse** than audio.cpp's Qwen3 ASR — technical terms and Vietnamese tones were garbled. Rolled back to audio.cpp for STT quality.
+
+**Cleanup:**
+- `stt-service/` directory and all references permanently removed — the experiment is archived in git history if ever needed
+- `scripts/start-audio-services.bat` / `.sh` no longer include stt-service fallback logic
+- All configs, code, and docs point exclusively to audio.cpp for STT
+
+---
+
+## 2026-08-20
+
+### Add Audio Gateway (Unified TTS with Kokoro + Piper)
+
+**Change:** `add-audio-gateway-unified-tts`
+
+**Problem:** Next.js talked directly to multiple TTS services (Kokoro on :8081, future Piper on another port), leaking audio internals into the application code. Adding a new TTS engine required touching Next.js.
+
+**Solution:** Introduced an **Audio Gateway** — a lightweight FastAPI proxy on `:8082` that exposes a single unified `POST /v1/audio/speech` endpoint. The gateway routes to Kokoro or Piper based on an `engine` parameter. Next.js only ever sees one URL. Also added a **Piper TTS Service** (`piper-service/`) wrapping the existing Vietnamese Piper models.
+
+**What changed:**
+- New services:
+  - `audio-gateway/` — FastAPI proxy that routes TTS requests to Kokoro or Piper
+  - `piper-service/` — FastAPI wrapper for Piper ONNX TTS models (~50-150MB each)
+- Config:
+  - Replaced `audio.ttsUrl` with `audio.gatewayUrl`
+  - Added `DEFAULT_TTS_ENGINE` env var (`kokoro` | `piper`)
+  - Added `ttsProvider` column to `interview_sessions` (per-session selection)
+- Audio client:
+  - Replaced `KokoroTtsClient` with `AudioGatewayClient`
+  - Added `SynthesizeOptions` interface with `engine` and `voice`
+  - Updated `synthesizeSpeech()` to accept options
+- UI:
+  - Added TTS engine selector (Kokoro / Piper) to session creation form when voice mode is selected
+- Database:
+  - Migration `0007_add_tts_provider.sql` adds `tts_provider` column
+- Docs:
+  - Updated `SETUP.md`, `API.md`, `ARCHITECTURE.md`, `COMPONENTS.md`
+
+**Fix (same day):** Piper service was returning empty 44-byte WAV files (header only, no audio data). Root cause: `PiperVoice.synthesize()` yields `AudioChunk` objects, not raw bytes or numpy arrays. Fixed by extracting `audio_int16_bytes` from each `AudioChunk`. Also added auto-discovery of `./pipervoices` from project root so no env var is required.
+
+---
+
+## 2026-08-17
+
+### Replace audio.cpp TTS with Kokoro
+
+**Change:** `replace-audiocpp-tts-with-kokoro`
+
+**Problem:** audio.cpp TTS was too slow (~46s per sentence on RTX 3050 4GB due to VRAM exhaustion and CPU fallback), making voice interviews unusable.
+
+**Solution:** Replaced audio.cpp TTS with a dedicated Kokoro FastAPI service. Kokoro is an 82M-parameter ONNX model that synthesizes speech in ~200-500ms on CPU. audio.cpp remains for STT transcription.
+
+**What changed:**
+- New service:
+  - Added `kokoro-service/` Python FastAPI app with `main.py`, `requirements.txt`, `download_models.py`
+  - Downloads `Kokoro-Vietnamese` ONNX model (~300MB) from Hugging Face
+- Config:
+  - Split `audio.baseUrl` into `audio.sttUrl` and `audio.ttsUrl`
+  - Added `KOKORO_BASE_URL` and `KOKORO_TTS_MODEL` env vars
+- Audio client:
+  - Refactored `src/lib/audio/client.ts` into `AudioCppClient` (STT) and `KokoroTtsClient` (TTS)
+  - Updated `synthesizeSpeech()` in `src/lib/audio/tts.ts` to use `ttsClient`
+  - Updated health check to verify both services
+- Docs:
+  - Updated `docs/SETUP.md` with separate audio.cpp (STT) and Kokoro (TTS) setup instructions
+
+---
+
 ## 2026-08-09
 
 ### Job Description on Positions
@@ -328,6 +886,80 @@ Initial implementation of AI-powered interviewer using Ollama.
 ### OpenSpec Integration
 
 Added OpenSpec framework for managing changes.
+
+---
+
+## 2026-08-17
+
+### Voice Interview (Turn-Based)
+
+**Change:** `add-voice-interview-turn-based` (OpenSpec)
+
+**Problem:** The Adaptive Interview Engine is text-only. Candidates with motor disabilities, dyslexia, or strong verbal communication skills are disadvantaged. Hiring managers cannot assess vocal delivery.
+
+**Solution:** Added an optional turn-based voice interview mode alongside existing text mode. Candidates record audio answers; the server transcribes via audio.cpp (STT), generates the next question via Ollama, and synthesizes the response via audio.cpp (TTS).
+
+**What changed:**
+- Database:
+  - Added `mode` column to `interview_sessions` (`text` | `voice`, default `text`)
+  - Added audio columns to `messages`: `audioUrl`, `audioDurationSeconds`, `audioFormat`, `sttConfidence`
+  - Generated migration `migrations/0006_silent_rachel_grey.sql`
+- Config:
+  - Added `audio` section to `src/lib/config/` with `baseUrl`, `sttModel`, `ttsModel`, `timeoutMs`
+  - New env vars: `AUDIOCPP_BASE_URL`, `AUDIOCPP_STT_MODEL`, `AUDIOCPP_TTS_MODEL`
+- Audio Infrastructure:
+  - Created `src/lib/audio/client.ts` — HTTP client for audio.cpp
+  - Created `src/lib/audio/stt.ts` — STT wrapper
+  - Created `src/lib/audio/tts.ts` — TTS wrapper
+  - Created `src/lib/audio/storage.ts` — local filesystem audio storage
+- API:
+  - `POST /api/voice/start` — generate first question with TTS
+  - `POST /api/voice/turn` — full turn pipeline: STT → LLM → TTS
+  - `GET /audio/[[...path]]` — serve stored audio files
+  - `POST /api/sessions` — accepts optional `mode` parameter
+- UI:
+  - New `AudioRecorder` component — MediaRecorder + waveform visualization
+  - New `AudioPlayer` component — HTML5 audio with transcript toggle
+  - New `/interview/[id]/voice` page — voice interview UX
+  - Updated `/setup` — mode selection (Text / Voice)
+  - Updated `/dashboard` — mode badges and "Join Voice" links
+  - Updated `/interview/[id]` — redirects voice sessions to voice page
+- Documentation:
+  - Updated `API.md`, `ARCHITECTURE.md`, `COMPONENTS.md`, `SETUP.md`, `CHANGELOG.md`
+
+**Status:** Implemented and documented.
+
+---
+
+## 2026-08-15
+
+### MCP Analytics Server
+
+**Change:** `add-mcp-analytics-server` (OpenSpec)
+
+**Problem:** Interview data is locked inside PostgreSQL. External AI assistants (Claude Desktop, Cursor, internal tooling) cannot query candidate evaluations, campaign performance, or session summaries.
+
+**Solution:** Exposed a read-only, anonymized MCP server over SSE at `/api/mcp`. Six tools provide structured access to interview analytics without exposing PII.
+
+**What changed:**
+- Dependencies: Added `@modelcontextprotocol/sdk` and `zod`
+- Config: Added `mcp` section to `src/lib/config/` with `enabled` flag and `authToken`
+- Infrastructure:
+  - Created `src/lib/mcp/auth.ts` — Bearer token validation with timing-safe comparison
+  - Created `src/lib/mcp/transport.ts` — custom SSE transport for Next.js App Router
+  - Created `src/lib/mcp/server.ts` — `McpServer` with tool registry
+  - Created `src/app/api/mcp/route.ts` — GET (SSE) + POST (JSON-RPC) handlers
+- Tools:
+  - `listCampaigns` — campaigns with position/session counts
+  - `getCampaignAnalytics` — aggregated scores, skills, weak areas
+  - `listSessions` — anonymized session metadata
+  - `getSessionSummary` — session + evaluation scores (no transcript)
+  - `listPositions` — positions with session counts
+  - `searchCandidatesBySkill` — skill-matched candidates (no names)
+- Anonymization: `src/lib/mcp/tools/_anonymize.ts` strips PII and replaces `candidateId` with stable UUIDs
+- Documentation: Updated `API.md`, `ARCHITECTURE.md`, `SECURITY.md`, `SETUP.md`, `CHANGELOG.md`, `COMPONENTS.md`, `README.md`
+
+**Status:** Implemented and documented.
 
 ---
 

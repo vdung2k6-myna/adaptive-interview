@@ -1,18 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { ScoreInput } from "@/components/ScoreInput";
 import { ModelBadge } from "@/components/ModelBadge";
 import { VersionHistory } from "@/components/VersionHistory";
+import { SentenceAudioQueue } from "@/lib/audio/sentence-queue";
+import { apiFetch } from "@/lib/api-client";
 
 interface Message {
   id: string;
   role: "interviewer" | "candidate";
   content: string;
   createdAt: string;
+  audioUrl?: string | null;
 }
 
 interface AiScores {
@@ -53,12 +56,34 @@ interface EvalVersion {
   createdAt: string;
 }
 
+// Async evaluation job state
+interface EvalJobState {
+  phase: "idle" | "posting" | "polling" | "completed" | "failed";
+  jobId?: string;
+  error?: string;
+}
+
+// POST /api/sessions/:id/evaluate response
+interface StartEvalResponse {
+  jobId: string;
+  status: string;
+}
+
+// GET /api/evaluations/jobs/:jobId response
+interface JobStatusResponse {
+  id: string;
+  status: "running" | "completed" | "failed";
+  result?: LatestEvaluation;
+  error?: string;
+}
+
 interface SessionData {
   session: {
     id: string;
     status: string;
     maxTurns: number;
     currentTurn: number;
+    ttsProvider: string;
     createdAt: string;
     completedAt: string | null;
   };
@@ -103,8 +128,7 @@ export default function TranscriptPage() {
   const [versions, setVersions] = useState<EvalVersion[]>([]);
   const [viewingVersion, setViewingVersion] = useState<LatestEvaluation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [evalLoading, setEvalLoading] = useState(false);
-  const [evalError, setEvalError] = useState("");
+  const [evalJob, setEvalJob] = useState<EvalJobState>({ phase: "idle" });
   const [savingCalibration, setSavingCalibration] = useState(false);
 
   const [humanScores, setHumanScores] = useState<HumanScores>({
@@ -117,6 +141,26 @@ export default function TranscriptPage() {
   const [selectedModel, setSelectedModel] = useState("");
   const [notes, setNotes] = useState("");
   const [copied, setCopied] = useState(false);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  const [messagePlaybackRates, setMessagePlaybackRates] = useState<
+    Map<string, number>
+  >(new Map());
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sentenceQueueRef = useRef<SentenceAudioQueue | null>(null);
+  const objectUrlsRef = useRef<string[]>([]);
+  const seenSentenceIndicesRef = useRef(new Set<number>());
+  const speakAbortRef = useRef<AbortController | null>(null);
+  /** Incremented every time Speak starts — used to invalidate stale SSE loops. */
+  const speakGenerationRef = useRef(0);
+
+  // Reorder buffer: holds chunks that arrived out-of-order until all
+  // previous indices are ready, ensuring playback always starts from 0.
+  const pendingChunksRef = useRef<
+    Map<number, { audioUrl: string; text: string }>
+  >(new Map());
+  const nextExpectedIndexRef = useRef(0);
 
   const activeEvaluation = viewingVersion || latest;
   const isViewingHistory = !!viewingVersion;
@@ -126,9 +170,27 @@ export default function TranscriptPage() {
     fetchEvaluation();
   }, [sessionId]);
 
+  // Stop all audio when user navigates away from this page
+  useEffect(() => {
+    return () => {
+      cleanupStreamState();
+      const audio = currentAudioRef.current;
+      if (audio) {
+        audio.pause();
+        audio.currentTime = 0;
+        const src = audio.src;
+        if (src && src.startsWith("blob:")) {
+          URL.revokeObjectURL(src);
+        }
+        currentAudioRef.current = null;
+      }
+      setSpeakingMsgId(null);
+    };
+  }, []);
+
   async function fetchSession() {
     try {
-      const res = await fetch(`/api/sessions/${sessionId}`);
+      const res = await apiFetch(`/api/sessions/${sessionId}`);
       if (!res.ok) throw new Error("Failed to load session");
       const data: SessionData = await res.json();
       setSessionData(data);
@@ -139,11 +201,14 @@ export default function TranscriptPage() {
     }
   }
 
-  async function fetchEvaluation() {
+  async function fetchEvaluation(): Promise<
+    { latest: LatestEvaluation | null; versions: EvalVersion[] } | null
+  > {
     try {
-      const res = await fetch(`/api/evaluations/${sessionId}`);
+      const res = await apiFetch(`/api/evaluations/${sessionId}`);
       if (res.ok) {
-        const data = await res.json();
+        const data: { latest: LatestEvaluation | null; versions: EvalVersion[] } =
+          await res.json();
         setLatest(data.latest);
         setVersions(data.versions);
         if (data.latest) {
@@ -151,15 +216,17 @@ export default function TranscriptPage() {
           setHumanRecommendation(data.latest.humanRecommendation);
           setNotes(data.latest.recruiterNotes || "");
         }
+        return data;
       }
     } catch {
       // Evaluation may not exist yet — that's fine
     }
+    return null;
   }
 
   async function fetchVersion(versionId: string) {
     try {
-      const res = await fetch(`/api/evaluations/versions/${versionId}`);
+      const res = await apiFetch(`/api/evaluations/versions/${versionId}`);
       if (!res.ok) throw new Error("Failed to load version");
       const data: LatestEvaluation = await res.json();
       setViewingVersion(data);
@@ -168,34 +235,90 @@ export default function TranscriptPage() {
     }
   }
 
-  async function generateEvaluation() {
-    setEvalLoading(true);
-    setEvalError("");
+  async function startEvaluationJob() {
+    setEvalJob({ phase: "posting" });
+
     try {
-      const res = await fetch(`/api/sessions/${sessionId}/evaluate`, {
+      const res = await apiFetch(`/api/sessions/${sessionId}/evaluate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: selectedModel || undefined }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to generate evaluation");
+        throw new Error(data.error || "Failed to start evaluation");
       }
-      // Refetch to get proper {latest, versions} shape
-      await fetchEvaluation();
-      setViewingVersion(null);
+
+      const { jobId }: StartEvalResponse = await res.json();
+      setEvalJob({ phase: "polling", jobId });
     } catch (err) {
-      setEvalError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setEvalLoading(false);
+      setEvalJob({
+        phase: "failed",
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
     }
   }
+
+  // Poll evaluation job status every 2 seconds
+  useEffect(() => {
+    if (evalJob.phase !== "polling" || !evalJob.jobId) return;
+
+    const poll = async () => {
+      try {
+        const res = await apiFetch(`/api/evaluations/jobs/${evalJob.jobId}`);
+        if (!res.ok) throw new Error("Poll failed");
+
+        const job: JobStatusResponse = await res.json();
+
+        if (job.status === "completed") {
+          setEvalJob({ phase: "completed" });
+
+          // fetchEvaluation() transforms snake_case → camelCase and sets latest,
+          // humanScores, humanRecommendation, and notes correctly.
+          const data = await fetchEvaluation();
+
+          // Defensive: if the backend's versions list is stale (doesn't yet
+          // include the newly-created evaluation), append it optimistically so
+          // the VersionHistory shows "Current".
+          const latestEval = data?.latest ?? null;
+          if (latestEval) {
+            setVersions((prev) => {
+              const exists = prev.some((v) => v.id === latestEval.id);
+              if (exists) return prev;
+              const newVersion: EvalVersion = {
+                id: latestEval.id,
+                model: latestEval.model,
+                humanCalibrated: latestEval.humanCalibrated,
+                createdAt: latestEval.createdAt,
+              };
+              return [newVersion, ...prev];
+            });
+          }
+
+          setViewingVersion(null);
+          setEvalJob({ phase: "idle" });
+        } else if (job.status === "failed") {
+          setEvalJob({
+            phase: "failed",
+            error: job.error || "Evaluation failed",
+          });
+        }
+        // "running" — do nothing, interval keeps firing
+      } catch {
+        // Network error during poll — keep trying
+      }
+    };
+
+    poll(); // first check immediately
+    const interval = setInterval(poll, 2000);
+    return () => clearInterval(interval);
+  }, [evalJob.phase, evalJob.jobId]);
 
   async function saveCalibration() {
     if (!latest) return;
     setSavingCalibration(true);
     try {
-      const res = await fetch(`/api/evaluations/${sessionId}`, {
+      const res = await apiFetch(`/api/evaluations/${sessionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -222,7 +345,7 @@ export default function TranscriptPage() {
   async function deleteVersion(versionId: string) {
     if (!confirm("Delete this evaluation version?")) return;
     try {
-      const res = await fetch(`/api/evaluations/versions/${versionId}`, {
+      const res = await apiFetch(`/api/evaluations/versions/${versionId}`, {
         method: "DELETE",
       });
       if (!res.ok) {
@@ -245,6 +368,274 @@ export default function TranscriptPage() {
       fetchVersion(versionId);
     }
   }
+
+  function cleanupStreamState() {
+    if (sentenceQueueRef.current) {
+      sentenceQueueRef.current.stop();
+      sentenceQueueRef.current = null;
+    }
+    if (speakAbortRef.current) {
+      speakAbortRef.current.abort();
+      speakAbortRef.current = null;
+    }
+    seenSentenceIndicesRef.current.clear();
+    objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    objectUrlsRef.current = [];
+    pendingChunksRef.current.clear();
+    nextExpectedIndexRef.current = 0;
+  }
+
+  /** Flush pending chunks in strict index order starting from nextExpectedIndex.
+   *  Skips chunks where audioUrl is empty (TTS failed). */
+  function flushPendingChunks() {
+    if (!sentenceQueueRef.current) return;
+    let idx = nextExpectedIndexRef.current;
+    while (pendingChunksRef.current.has(idx)) {
+      const chunk = pendingChunksRef.current.get(idx)!;
+      if (chunk.audioUrl) {
+        sentenceQueueRef.current.enqueue(idx, chunk.audioUrl, chunk.text);
+      }
+      pendingChunksRef.current.delete(idx);
+      idx++;
+    }
+    nextExpectedIndexRef.current = idx;
+  }
+
+  async function speakMessageStream(
+    text: string,
+    msgId: string,
+    engine?: string,
+    playbackRate = 1
+  ) {
+    const currentGen = ++speakGenerationRef.current;
+
+    // If another message is currently playing, stop it first so we can
+    // start this one from the beginning.
+    if (speakingMsgId && speakingMsgId !== msgId) {
+      stopSpeaking();
+    }
+    // If THIS message is already playing, do nothing (the Stop button
+    // handles the toggle).
+    if (speakingMsgId === msgId) return;
+    setSpeakingMsgId(msgId);
+
+    // Create AudioContext on first Speak click
+    if (!audioCtxRef.current) {
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (Ctx) {
+        audioCtxRef.current = new Ctx();
+      }
+    }
+    if (audioCtxRef.current?.state === "suspended") {
+      try {
+        await audioCtxRef.current.resume();
+      } catch {
+        // ignore
+      }
+    }
+
+    cleanupStreamState();
+
+    // Create sentence queue for this speak session
+    if (audioCtxRef.current) {
+      sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
+        playbackRate: playbackRate,
+        onFinished: () => {
+          cleanupStreamState();
+          setSpeakingMsgId(null);
+        },
+      });
+    }
+
+    const abortCtrl = new AbortController();
+    speakAbortRef.current = abortCtrl;
+
+    try {
+      // Direct backend URL to bypass Next.js dev proxy buffering.
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+      const res = await apiFetch(`${backendUrl}/api/voice/speak-stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, engine }),
+        signal: abortCtrl.signal,
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error("SSE failed");
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const eventBlock of lines) {
+          if (!eventBlock.trim()) continue;
+
+          const eventLine = eventBlock.split("\n").find((l) => l.startsWith("event:"));
+          const dataLine = eventBlock.split("\n").find((l) => l.startsWith("data:"));
+
+          if (!eventLine || !dataLine) continue;
+
+          const eventName = eventLine.replace("event:", "").trim();
+          const payload = dataLine.replace("data:", "").trim();
+
+          try {
+            const parsed = JSON.parse(payload);
+
+            switch (eventName) {
+              case "sentence": {
+                if (currentGen !== speakGenerationRef.current) break; // stale stream from previous Speak
+                const s = parsed as { index: number; text: string; audioUrl: string | null };
+                if (seenSentenceIndicesRef.current.has(s.index)) break;
+                seenSentenceIndicesRef.current.add(s.index);
+
+                if (s.audioUrl) {
+                  // Buffer chunk; flush will enqueue in strict index order
+                  pendingChunksRef.current.set(s.index, {
+                    audioUrl: s.audioUrl,
+                    text: s.text,
+                  });
+                  flushPendingChunks();
+                } else {
+                  // TTS failed for this chunk — skip it so playback isn't blocked
+                  pendingChunksRef.current.set(s.index, {
+                    audioUrl: "",
+                    text: s.text,
+                  });
+                  flushPendingChunks();
+                }
+                break;
+              }
+
+              case "done": {
+                // Playback continues; onFinished will clear state
+                break;
+              }
+
+              case "error": {
+                console.error("[Transcript] SSE error event:", parsed);
+                throw new Error(parsed.message || "Streaming error");
+              }
+            }
+          } catch {
+            // Skip malformed SSE data
+          }
+        }
+      }
+      // Stream completed normally — clear the abort controller
+      speakAbortRef.current = null;
+
+      // Guard: if TTS returned null for every chunk, the queue never started
+      // and onFinished won't fire — clear the stuck "Stop" button state.
+      if (
+        speakingMsgId === msgId &&
+        sentenceQueueRef.current &&
+        sentenceQueueRef.current.getQueueLength() === 0 &&
+        !sentenceQueueRef.current.getIsPlaying()
+      ) {
+        cleanupStreamState();
+        setSpeakingMsgId(null);
+      }
+    } catch (err) {
+      // If this stream was superseded by a newer Speak or Stop, don't fall back
+      if (currentGen !== speakGenerationRef.current) {
+        cleanupStreamState();
+        setSpeakingMsgId(null);
+        return;
+      }
+      if (err instanceof Error && err.name === "AbortError") {
+        cleanupStreamState();
+        setSpeakingMsgId(null);
+        return;
+      }
+      console.error("[Transcript] Streaming speak failed, falling back:", err);
+      cleanupStreamState();
+      await speakMessageFallback(text, msgId, engine, playbackRate);
+    }
+  }
+
+  async function speakMessageFallback(
+    text: string,
+    msgId: string,
+    engine?: string,
+    playbackRate = 1
+  ) {
+    if (speakingMsgId) return;
+    setSpeakingMsgId(msgId);
+
+    try {
+      const res = await apiFetch("/api/voice/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, engine }),
+      });
+
+      if (!res.ok) {
+        throw new Error("TTS failed");
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      objectUrlsRef.current.push(url);
+      const audio = new Audio(url);
+      audio.playbackRate = playbackRate;
+      currentAudioRef.current = audio;
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        currentAudioRef.current = null;
+        setSpeakingMsgId(null);
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        currentAudioRef.current = null;
+        setSpeakingMsgId(null);
+      };
+
+      await audio.play();
+    } catch (err) {
+      console.error("Speak error:", err);
+      currentAudioRef.current = null;
+      setSpeakingMsgId(null);
+    }
+  }
+
+  function stopSpeaking() {
+    speakGenerationRef.current++;
+    cleanupStreamState();
+
+    const audio = currentAudioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+      const src = audio.src;
+      if (src && src.startsWith("blob:")) {
+        URL.revokeObjectURL(src);
+      }
+      currentAudioRef.current = null;
+    }
+
+    setSpeakingMsgId(null);
+  }
+
+  const getMessagePlaybackRate = (msgId: string): number =>
+    messagePlaybackRates.get(msgId) ?? 1;
+
+  const setMessagePlaybackRate = (msgId: string, rate: number) => {
+    setMessagePlaybackRates((prev) => new Map(prev).set(msgId, rate));
+  };
 
   function StarRating({ score, label }: { score: number | null; label: string }) {
     return (
@@ -374,9 +765,52 @@ export default function TranscriptPage() {
               <div className="space-y-4">
                 {messages.map((msg) => (
                   <div key={msg.id} className="border-l-2 border-zinc-200 dark:border-zinc-700 pl-4">
-                    <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
-                      {msg.role === "interviewer" ? "🤖 Interviewer" : "👤 Candidate"}
-                    </p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                        {msg.role === "interviewer" ? "🤖 Interviewer" : "👤 Candidate"}
+                      </p>
+                      {msg.role === "interviewer" && (
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={getMessagePlaybackRate(msg.id)}
+                            onChange={(e) =>
+                              setMessagePlaybackRate(msg.id, parseFloat(e.target.value))
+                            }
+                            aria-label="Playback speed"
+                            title="Playback speed"
+                            className="rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-600 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
+                          >
+                            <option value={0.5}>0.5x</option>
+                            <option value={0.75}>0.75x</option>
+                            <option value={1.0}>1.0x</option>
+                            <option value={1.25}>1.25x</option>
+                            <option value={1.5}>1.5x</option>
+                            <option value={2.0}>2.0x</option>
+                          </select>
+                          <button
+                            onClick={() =>
+                              speakingMsgId === msg.id
+                                ? stopSpeaking()
+                                : speakMessageStream(
+                                    msg.content,
+                                    msg.id,
+                                    sessionData?.session.ttsProvider,
+                                    getMessagePlaybackRate(msg.id)
+                                  )
+                            }
+                            disabled={speakingMsgId !== null && speakingMsgId !== msg.id}
+                            className={`text-xs rounded px-2 py-0.5 border transition-colors ${
+                              speakingMsgId === msg.id
+                                ? "border-red-200 text-red-600 hover:text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:text-red-200 dark:hover:bg-red-900/20"
+                                : "border-zinc-200 text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800"
+                            } disabled:opacity-40`}
+                            title={speakingMsgId === msg.id ? "Stop" : "Speak"}
+                          >
+                            {speakingMsgId === msg.id ? "⏹ Stop" : "🔊 Speak"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     {msg.role === "interviewer" ? (
                       <div className="text-sm text-zinc-800 dark:text-zinc-200">
                         <MarkdownRenderer content={msg.content} />
@@ -419,9 +853,33 @@ export default function TranscriptPage() {
 
               {!activeEvaluation && session.status === "completed" && (
                 <div>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-3">
-                    No evaluation yet.
-                  </p>
+                  {evalJob.phase === "idle" && (
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-3">
+                      No evaluation yet.
+                    </p>
+                  )}
+                  {evalJob.phase === "posting" && (
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-50" />
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                        Starting evaluation...
+                      </p>
+                    </div>
+                  )}
+                  {evalJob.phase === "polling" && (
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-50" />
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                        Evaluating... (job: {evalJob.jobId?.slice(0, 8)})
+                      </p>
+                    </div>
+                  )}
+                  {evalJob.phase === "failed" && (
+                    <div className="mb-3 rounded-lg bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300 border border-red-200 dark:border-red-800">
+                      <p className="font-medium">Evaluation failed</p>
+                      <p className="text-xs">{evalJob.error}</p>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <select
                       value={selectedModel}
@@ -435,16 +893,19 @@ export default function TranscriptPage() {
                       ))}
                     </select>
                     <button
-                      onClick={generateEvaluation}
-                      disabled={evalLoading}
+                      onClick={startEvaluationJob}
+                      disabled={evalJob.phase === "posting" || evalJob.phase === "polling"}
                       className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
                     >
-                      {evalLoading ? "Generating..." : "Generate Evaluation"}
+                      {evalJob.phase === "posting"
+                        ? "Starting..."
+                        : evalJob.phase === "polling"
+                        ? "Evaluating..."
+                        : evalJob.phase === "failed"
+                        ? "Retry Evaluation"
+                        : "Generate Evaluation"}
                     </button>
                   </div>
-                  {evalError && (
-                    <p className="mt-2 text-xs text-red-600 dark:text-red-400">{evalError}</p>
-                  )}
                 </div>
               )}
 
@@ -620,6 +1081,24 @@ export default function TranscriptPage() {
                       <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
                         Re-evaluate
                       </p>
+                      {evalJob.phase === "posting" && (
+                        <div className="mb-2 flex items-center gap-2">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-50" />
+                          <p className="text-sm text-zinc-600 dark:text-zinc-400">Starting evaluation...</p>
+                        </div>
+                      )}
+                      {evalJob.phase === "polling" && (
+                        <div className="mb-2 flex items-center gap-2">
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-50" />
+                          <p className="text-sm text-zinc-600 dark:text-zinc-400">Evaluating... (job: {evalJob.jobId?.slice(0, 8)})</p>
+                        </div>
+                      )}
+                      {evalJob.phase === "failed" && (
+                        <div className="mb-2 rounded-lg bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300 border border-red-200 dark:border-red-800">
+                          <p className="font-medium">Evaluation failed</p>
+                          <p className="text-xs">{evalJob.error}</p>
+                        </div>
+                      )}
                       <div className="space-y-2">
                         <select
                           value={selectedModel}
@@ -633,16 +1112,19 @@ export default function TranscriptPage() {
                           ))}
                         </select>
                         <button
-                          onClick={generateEvaluation}
-                          disabled={evalLoading}
+                          onClick={startEvaluationJob}
+                          disabled={evalJob.phase === "posting" || evalJob.phase === "polling"}
                           className="w-full rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
                         >
-                          {evalLoading ? "Generating..." : "Run New Evaluation"}
+                          {evalJob.phase === "posting"
+                            ? "Generating..."
+                            : evalJob.phase === "polling"
+                            ? "Evaluating..."
+                            : evalJob.phase === "failed"
+                            ? "Retry Evaluation"
+                            : "Run New Evaluation"}
                         </button>
                       </div>
-                      {evalError && (
-                        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{evalError}</p>
-                      )}
                     </div>
                   )}
 

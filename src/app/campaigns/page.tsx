@@ -1,47 +1,51 @@
-import { db } from "@/lib/db";
-import { campaigns, campaignPositions, interviewSessions } from "@/lib/schema";
-import { count, sql } from "drizzle-orm";
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { apiFetch } from "@/lib/api-client";
+import type { Campaign } from "@/lib/types";
 import DeleteButton from "@/components/DeleteButton";
 
-export const dynamic = "force-dynamic";
+export default function CampaignsPage() {
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-export default async function CampaignsPage() {
-  const campaignRows = await db.select().from(campaigns);
+  useEffect(() => {
+    apiFetch("/api/campaigns")
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data: Campaign[]) => setCampaigns(data))
+      .catch(() => setError("Failed to load campaigns"))
+      .finally(() => setLoading(false));
+  }, []);
 
-  // Count positions and sessions per campaign
-  const positionCounts = await db
-    .select({
-      campaignId: campaignPositions.campaignId,
-      count: count(),
-    })
-    .from(campaignPositions)
-    .groupBy(campaignPositions.campaignId);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+        <div className="mx-auto max-w-5xl">
+          <p className="text-zinc-500 dark:text-zinc-400">Loading campaigns...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const positionCountMap = new Map(positionCounts.map((c) => [c.campaignId, c.count]));
-
-  // Get all campaign-position pairs to count sessions
-  const cpRows = await db.select().from(campaignPositions);
-  const positionIds = [...new Set(cpRows.map((c) => c.positionId))];
-
-  const sessionCounts =
-    positionIds.length > 0
-      ? await db
-          .select({
-            positionId: interviewSessions.positionId,
-            count: count(),
-          })
-          .from(interviewSessions)
-          .where(sql`${interviewSessions.positionId} IN (${sql.join(positionIds.map((pid) => sql`${pid}`), sql`, `)})`)
-          .groupBy(interviewSessions.positionId)
-      : [];
-
-  const sessionCountMap = new Map(sessionCounts.map((s) => [s.positionId, s.count]));
-
-  const campaignSessionCountMap = new Map<string, number>();
-  for (const cp of cpRows) {
-    const sCount = sessionCountMap.get(cp.positionId) || 0;
-    campaignSessionCountMap.set(cp.campaignId, (campaignSessionCountMap.get(cp.campaignId) || 0) + sCount);
+  if (error) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+        <div className="mx-auto max-w-5xl">
+          <p className="text-red-600 dark:text-red-400">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -70,7 +74,7 @@ export default async function CampaignsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {campaignRows.length === 0 ? (
+              {campaigns.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
                     No campaigns yet.{" "}
@@ -78,9 +82,9 @@ export default async function CampaignsPage() {
                   </td>
                 </tr>
               ) : (
-                campaignRows.map((c) => {
-                  const posCount = positionCountMap.get(c.id) || 0;
-                  const sessCount = campaignSessionCountMap.get(c.id) || 0;
+                campaigns.map((c) => {
+                  const posCount = c.positionCount || 0;
+                  const sessCount = c.sessionCount || 0;
                   const dateStr =
                     c.startDate && c.endDate
                       ? `${new Date(c.startDate).toLocaleDateString()} – ${new Date(c.endDate).toLocaleDateString()}`
@@ -117,7 +121,11 @@ export default async function CampaignsPage() {
                           >
                             View
                           </Link>
-                          <DeleteButton id={c.id} type="campaign" />
+                          <DeleteButton
+                            id={c.id}
+                            type="campaign"
+                            onDelete={() => setCampaigns((prev) => prev.filter((item) => item.id !== c.id))}
+                          />
                         </div>
                       </td>
                     </tr>

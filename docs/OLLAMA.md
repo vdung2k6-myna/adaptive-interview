@@ -16,7 +16,9 @@ The application communicates with Ollama via HTTP API calls. Both local and remo
 
 ## Client Module
 
-`src/lib/ollama.ts` provides three functions:
+The frontend repository has no Ollama client. All Ollama integration lives in the Express backend (`adaptive-interview-api/src/lib/ollama.ts`). The frontend never contacts Ollama directly.
+
+The backend's Ollama client provides three functions:
 
 ### `embedText(text: string): Promise<number[]>`
 
@@ -59,7 +61,7 @@ Each line is parsed independently. Malformed lines are skipped gracefully.
 
 ## Prompt Construction
 
-`src/lib/prompts.ts` builds the interview context:
+`src/lib/prompts.ts` (in the backend) builds the interview context:
 
 ```
 You are an experienced technical interviewer conducting a structured interview.

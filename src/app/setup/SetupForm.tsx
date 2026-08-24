@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/api-client";
 
 interface SetupFormProps {
   positions: { id: string; title: string; level: string }[];
@@ -19,6 +20,8 @@ export default function SetupForm({
   const router = useRouter();
   const [positionId, setPositionId] = useState("");
   const [candidateId, setCandidateId] = useState("");
+  const [mode, setMode] = useState<"text" | "voice">("text");
+  const [ttsProvider, setTtsProvider] = useState<"kokoro" | "piper">("kokoro");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [interviewUrl, setInterviewUrl] = useState("");
@@ -36,10 +39,10 @@ export default function SetupForm({
     setLoading(true);
 
     try {
-      const res = await fetch("/api/sessions", {
+      const res = await apiFetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ positionId, candidateId }),
+        body: JSON.stringify({ positionId, candidateId, mode, ttsProvider }),
       });
 
       if (!res.ok) {
@@ -48,12 +51,13 @@ export default function SetupForm({
       }
 
       const session = await res.json();
-      const url = `${window.location.origin}/interview/${session.id}`;
+      const interviewPath = mode === "voice" ? `/interview/${session.id}/voice` : `/interview/${session.id}`;
+      const url = `${window.location.origin}${interviewPath}`;
       setInterviewUrl(url);
 
       // Optionally redirect after a short delay
       setTimeout(() => {
-        router.push(`/interview/${session.id}`);
+        router.push(interviewPath);
       }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -118,6 +122,70 @@ export default function SetupForm({
             >
               Edit candidate
             </a>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+            Interview Mode
+          </label>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setMode("text")}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
+                mode === "text"
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              }`}
+            >
+              💬 Text
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("voice")}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
+                mode === "voice"
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              }`}
+            >
+              🎙️ Voice
+            </button>
+          </div>
+          {mode === "voice" && (
+            <div className="mt-2 space-y-2">
+              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Voice Engine
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTtsProvider("kokoro")}
+                  className={`flex-1 rounded-lg border px-3 py-1.5 text-xs text-center transition-colors ${
+                    ttsProvider === "kokoro"
+                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                      : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  🎵 Kokoro
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTtsProvider("piper")}
+                  className={`flex-1 rounded-lg border px-3 py-1.5 text-xs text-center transition-colors ${
+                    ttsProvider === "piper"
+                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                      : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  🔊 Piper
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Requires audio.cpp (STT) and audio gateway (TTS) running locally.
+              </p>
+            </div>
           )}
         </div>
 

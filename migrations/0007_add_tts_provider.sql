@@ -1,0 +1,1 @@
+ALTER TABLE "interview_sessions" ADD COLUMN "tts_provider" text DEFAULT 'kokoro' NOT NULL;

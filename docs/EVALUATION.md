@@ -31,11 +31,37 @@ Evaluations are stored in the `evaluationVersions` table. Each row represents on
 
 ## Evaluation Trigger
 
-Evaluations are generated on-demand via:
+Evaluations are generated on-demand by the **Express backend** via an **async job queue**:
 
-- **API:** `POST /api/sessions/:id/evaluate` (optional `{ model: "llama3.2" }` in body)
-- **UI:** "Generate Evaluation" or "Run New Evaluation" button on the transcript page
-- **Condition:** Session status must be `"completed"`
+### Flow
+
+```
+1. Frontend: POST /api/sessions/:id/evaluate
+   └──► Backend returns 202 { jobId, status: "running" }
+
+2. Frontend: GET /api/evaluations/jobs/:jobId  (every 2 seconds)
+   ├──► status: "running"   → keep polling
+   ├──► status: "completed" → fetch evaluation + display result
+   └──► status: "failed"   → display error + allow retry
+```
+
+### API
+
+- **Start:** `POST /api/sessions/:id/evaluate` (optional `{ model: "llama3.2" }` in body)
+  - Returns `202 Accepted` with `{ jobId, status }`
+- **Poll:** `GET /api/evaluations/jobs/:jobId`
+  - Returns `{ id, status, result?, error? }`
+
+### UI
+
+- **"Generate Evaluation"** or **"Run New Evaluation"** button on the transcript page triggers `startEvaluationJob()`
+- While polling, the UI shows a spinner with "Evaluating... (job: abc123)"
+- On completion, `fetchEvaluation()` is called to refresh the panel
+- On failure, an error banner appears with a **Retry** button
+
+### Condition
+
+Session status must be `"completed"`.
 
 Each trigger creates a **new version**. The latest version is always returned by `GET /api/evaluations/:sessionId`.
 
@@ -52,7 +78,7 @@ All scores are integers on a 1-5 scale:
 
 ## Evaluation Prompt
 
-`src/lib/evaluation.ts` builds a detailed evaluation prompt:
+`src/lib/evaluation.ts` (in the backend) builds a detailed evaluation prompt:
 
 ```
 You are an experienced technical hiring manager reviewing an interview transcript.

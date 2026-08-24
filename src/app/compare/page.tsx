@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { apiFetch } from "@/lib/api-client";
 
 interface Message {
   id: string;
@@ -81,8 +82,8 @@ function CompareContent() {
       const results = await Promise.all(
         sessionIds.map(async (id) => {
           const [sessionRes, evalRes] = await Promise.all([
-            fetch(`/api/sessions/${id}`),
-            fetch(`/api/evaluations/${id}`).catch(() => null),
+            apiFetch(`/api/sessions/${id}`),
+            apiFetch(`/api/evaluations/${id}`).catch(() => null),
           ]);
 
           if (!sessionRes.ok) throw new Error(`Failed to load session ${id}`);

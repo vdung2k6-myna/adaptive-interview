@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { apiFetch } from "@/lib/api-client";
 
 const MessageBubble = React.memo(function MessageBubble({ msg }: { msg: Message }) {
   const bubbleClass =
@@ -46,6 +47,7 @@ interface SessionData {
   session: {
     id: string;
     status: string;
+    mode: string;
     maxTurns: number;
     currentTurn: number;
   };
@@ -77,11 +79,18 @@ export default function InterviewPage() {
 
   async function fetchSession() {
     try {
-      const res = await fetch(`/api/sessions/${sessionId}`);
+      const res = await apiFetch(`/api/sessions/${sessionId}`);
       if (!res.ok) {
         throw new Error("Failed to load session");
       }
       const sessionData: SessionData = await res.json();
+
+      // Redirect voice sessions to voice interview page
+      if (sessionData.session.mode === "voice") {
+        window.location.href = `/interview/${sessionId}/voice`;
+        return;
+      }
+
       setData(sessionData);
 
       // If no messages yet, trigger first question
@@ -165,7 +174,7 @@ export default function InterviewPage() {
     const messageId = `stream-${Date.now()}`;
 
     try {
-      const res = await fetch("/api/messages", {
+      const res = await apiFetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),
@@ -225,7 +234,7 @@ export default function InterviewPage() {
     const messageId = `stream-${Date.now()}`;
 
     try {
-      const res = await fetch("/api/messages", {
+      const res = await apiFetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, content }),

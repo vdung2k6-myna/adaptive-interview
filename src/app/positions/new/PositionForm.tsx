@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/api-client";
 
 interface PositionFormProps {
   initialData?: {
@@ -60,7 +61,7 @@ export default function PositionForm({ initialData }: PositionFormProps) {
       const url = isEditing ? `/api/positions/${initialData.id}` : "/api/positions";
       const method = isEditing ? "PATCH" : "POST";
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

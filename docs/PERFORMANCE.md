@@ -15,7 +15,7 @@
 
 ### 2. Embedding on Critical Path
 
-**Problem:** `POST /api/messages` embeds the candidate's answer before calling Ollama. On slow hardware, embedding can take 1-3 seconds, blocking the first token.
+**Problem:** The backend's `POST /api/messages` embeds the candidate's answer before calling Ollama. On slow hardware, embedding can take 1-3 seconds, blocking the first token.
 
 **Impact:** User sees a long delay between submitting an answer and seeing the first interviewer token.
 
@@ -25,7 +25,7 @@
 
 ### 3. Database Queries on Each Message
 
-**Problem:** Each API message handler queries positions, candidates, messages, and embeddings.
+**Problem:** The backend's message handler queries positions, candidates, messages, and embeddings for every turn.
 
 **Impact:** N+1 query pattern for message history.
 

@@ -43,6 +43,20 @@
       "when": 1786259032756,
       "tag": "0005_salty_loners",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786947400397,
+      "tag": "0006_silent_rachel_grey",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787197343762,
+      "tag": "0007_add_tts_provider",
+      "breakpoints": true
     }
   ]
 }

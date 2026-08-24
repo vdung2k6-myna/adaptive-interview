@@ -22,4 +22,19 @@ export const productionConfig: AppConfig = {
     enableEvaluations: true,
     enableEmbeddings: true,
   },
+  mcp: {
+    enabled: process.env.MCP_ENABLED === "true",
+    authToken: process.env.MCP_AUTH_TOKEN || "",
+  },
+  auth: {
+    apiToken: process.env.API_AUTH_TOKEN || "",
+  },
+  audio: {
+    sttUrl: process.env.AUDIOCPP_BASE_URL || "http://localhost:8080",
+    gatewayUrl: process.env.AUDIO_GATEWAY_URL || "http://localhost:8082",
+    sttModel: process.env.AUDIOCPP_STT_MODEL || "stt",
+    defaultEngine: (process.env.DEFAULT_TTS_ENGINE as "kokoro" | "piper") || "kokoro",
+    defaultVoice: process.env.DEFAULT_VOICE || "diem_trinh",
+    timeoutMs: 60_000,
+  },
 };

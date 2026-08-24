@@ -120,9 +120,102 @@ Client component for deleting positions or candidates with confirmation.
 
 **Features:**
 - Confirmation dialog via `confirm()`
-- Calls `DELETE /api/{type}s/{id}`
+- Calls `DELETE /api/{type}s/{id}` via `apiFetch()` (injects Bearer token when auth is enabled)
 - Refreshes the page via `router.refresh()` on success
 - Shows alert on error
+
+---
+
+### `AudioRecorder`
+
+**Location:** `src/components/AudioRecorder.tsx`
+
+**Type:** Client component ("use client")
+
+**Responsibilities:**
+- Capture microphone input via MediaRecorder API
+- Visualize audio with live waveform (AudioContext + AnalyserNode)
+- Record / Stop / Discard controls
+- Emit recorded audio blob to parent
+
+**Props:**
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `onRecordingComplete` | `(blob: Blob, durationMs: number) => void` | Callback with recorded audio |
+| `disabled` | `boolean` | Optional, disables recorder |
+
+**Features:**
+- Supports `audio/webm` with fallback to `audio/wav`
+- Live waveform visualization (40 bars, updated via requestAnimationFrame)
+- Timer display during recording
+- Discard option before submitting
+
+---
+
+### `AudioPlayer`
+
+**Location:** `src/components/AudioPlayer.tsx`
+
+**Type:** Client component ("use client")
+
+**Responsibilities:**
+- Play synthesized interviewer audio via HTML5 `<audio>`
+- Custom play/pause/seek controls
+- Transcript show/hide toggle
+- Display role label (interviewer vs candidate)
+
+**Props:**
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `audioUrl` | `string` | URL to audio file (served by `/audio/...`) |
+| `transcript` | `string` | Text transcript of the audio |
+| `role` | `"interviewer" \| "candidate"` | Determines styling and label |
+
+**Features:**
+- Seek bar with current time / duration display
+- Auto-play support (triggered by parent VoiceInterviewPage)
+- Transcript accordion (hidden by default)
+- "Audio unavailable" fallback when TTS fails
+
+---
+
+### `StreamingAudioQueue`
+
+**Location:** `src/components/StreamingAudioQueue.tsx`
+
+**Type:** Client component ("use client")
+
+**Responsibilities:**
+- Receive sentence-level audio chunks via SSE and play them sequentially
+- Preload the next chunk while the current one plays for gapless transitions
+- Show a progress bar indicating which sentence is playing
+- Display the text of the currently playing sentence
+- Handle playback errors by advancing to the next chunk
+
+**Props:**
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `items` | `AudioQueueItem[]` | Array of `{ index, text, audioUrl }` chunks |
+| `onFinished` | `() => void` | Callback when queue finishes playing |
+| `autoPlay` | `boolean` | Start playing immediately when items arrive |
+
+**Usage:**
+
+```tsx
+<StreamingAudioQueue
+  items={streamItems}
+  onFinished={() => console.log("All chunks played")}
+  autoPlay={true}
+/>
+```
+
+**Implementation Notes:**
+- Uses two `<audio>` elements: one for current playback, one for preloading next
+- Advances via `onEnded` event listener, not timer-based polling
+- State updates are minimal: only `currentIndex` and `isPlaying` trigger re-renders
 
 ---
 
@@ -138,6 +231,7 @@ Client component for deleting positions or candidates with confirmation.
 - Manage turn-based conversation flow
 - Render chat UI with message bubbles
 - Handle user input submission
+- **Redirects voice sessions to `/interview/[id]/voice`**
 
 **Key State:**
 
@@ -158,7 +252,7 @@ User submits answer
 Optimistically add candidate message to state
     │
     ▼
-POST /api/messages → Returns ReadableStream
+POST /api/messages (via apiFetch()) → Returns text/plain stream
     │
     ▼
 consumeStream():
@@ -168,10 +262,75 @@ consumeStream():
     - On completion: fetchSession() to get persisted data
 ```
 
+**Note:** The stream is produced by the Express backend, not the Next.js frontend.
+
 **Performance Optimizations:**
 - `MessageBubble` extracted and wrapped in `React.memo`
 - Only the streaming message re-renders; completed messages are skipped
 - State updates batched to ~20/sec instead of ~100/sec
+
+---
+
+### `VoiceInterviewPage` (`interview/[id]/voice/page.tsx`)
+
+**Type:** Client component ("use client")
+
+**Responsibilities:**
+- Load voice interview session data via `apiFetch()`
+- Generate first question via `POST /api/voice/start` (apiFetch)
+- Render `AudioPlayer` for each completed interviewer message
+- Render `AudioRecorder` for candidate turns
+- Show processing states between turns
+- **Streaming mode:** Connect to `POST /api/voice/stream` (SSE via apiFetch), feed sentence chunks to `StreamingAudioQueue`
+- **Fallback mode:** Use `POST /api/voice/turn` (JSON via apiFetch) when SSE fails
+- Handle session completion (link to transcript)
+
+**Key State:**
+
+| State | Type | Purpose |
+|-------|------|---------|
+| `data` | `SessionData \| null` | Full session with messages |
+| `loading` | `boolean` | Initial load state |
+| `processing` | `boolean` | STT/LLM/TTS in progress |
+| `processingStep` | `string` | Human-readable step description |
+| `error` | `string` | Error message |
+| `useStreaming` | `boolean` | Toggle between SSE and JSON mode |
+| `streamItems` | `AudioQueueItem[]` | Sentence chunks for current response |
+| `streamFinished` | `boolean` | Queue playback completed |
+| `playbackRate` | `number` | AI voice playback speed (persisted via `usePlaybackRate`) |
+
+**Turn Flow (Streaming — Incremental):**
+
+```
+Candidate records answer → AudioRecorder emits blob
+    │
+    ▼
+POST /api/voice/stream (multipart: sessionId + audio, SSE)
+    │
+    ▼
+event: candidate → Add candidate message to state
+    │
+    ▼
+[LLM generating tokens in background]
+    │
+    ├─ sentence 1 complete ──▶ TTS ──▶ event: sentence (index: 0) ──▶ ▶️ play (~5–6s)
+    │
+    ├─ sentence 2 complete ──▶ TTS ──▶ event: sentence (index: 1) ──▶ ▶️ play
+    │
+    ├─ ... more sentences ...
+    │
+    ▼
+event: done → Add interviewer message (full audio) to state
+```
+
+**Key point:** `sentence` events arrive **during** LLM generation, not after. The server detects sentence boundaries in the token stream and fires TTS immediately. The `StreamingAudioQueue` appends each chunk as it arrives and plays them gaplessly.
+
+**Turn Flow (Fallback):**
+
+Same as before — `POST /api/voice/turn` returns full JSON response.
+
+**Streaming Toggle:**
+A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mode. If SSE fails mid-stream, the UI automatically falls back to `POST /api/voice/turn` with a "Streaming unavailable" banner.
 
 ---
 
@@ -200,12 +359,13 @@ consumeStream():
 **Type:** Client component ("use client")
 
 **Responsibilities:**
-- Display full interview transcript
+- Display full interview transcript (loaded via `apiFetch()`)
 - Show AI evaluation panel with human override
-- Support evaluation generation and re-evaluation with model selection
+- Support evaluation generation and re-evaluation with model selection (via `apiFetch()`)
 - Support human calibration (score override, recommendation, notes)
 - Display version history with select/delete
 - View historical evaluation versions (read-only)
+- **Play interviewer messages via Speak button with per-message adjustable playback rate**
 
 **Layout:** Two-column grid on desktop:
 - **Left (2/3):** Interview transcript with rich Markdown rendering
@@ -218,7 +378,7 @@ consumeStream():
 **Type:** Client component ("use client")
 
 **Responsibilities:**
-- List all interview sessions
+- List all interview sessions (fetched via `apiFetch()` from `/api/sessions`)
 - Show statistics cards (total, active, completed, avg AI score)
 - Filter by status and search by candidate/position
 - Link to individual transcripts
@@ -238,6 +398,7 @@ consumeStream():
 **Responsibilities:**
 - Side-by-side comparison of two candidates
 - Query params: `?a=session-id-1&b=session-id-2`
+- Fetches session and evaluation data via `apiFetch()`
 - Shows model badge for each evaluation
 - AI star ratings for each dimension
 - AI recommendation badges with calibration indicator
@@ -250,9 +411,9 @@ consumeStream():
 ### `SetupForm` (`setup/SetupForm.tsx`)
 
 **Responsibilities:**
-- Load positions and candidates from API
+- Receive positions and candidates from parent Client Component page (loaded via `apiFetch()`)
 - Dropdown selection for position + candidate
-- Create interview session on submit
+- Create interview session on submit via `apiFetch()`
 - Redirect to `/interview/{id}`
 
 ### `PositionForm` (`positions/new/PositionForm.tsx`)
@@ -262,8 +423,8 @@ consumeStream():
 - Level selection (Junior, Mid, Senior, Lead, Principal)
 - Job description textarea (optional, used by interviewer and evaluation prompts)
 - Requirements tag input (Enter to add, X to remove)
-- Create mode: `POST /api/positions`, redirects to `/setup`
-- Edit mode: `PATCH /api/positions/{id}`, redirects to `/positions`
+- Create mode: `POST /api/positions` via `apiFetch()`, redirects to `/setup`
+- Edit mode: `PATCH /api/positions/{id}` via `apiFetch()`, redirects to `/positions`
 
 **Props:**
 
@@ -280,7 +441,7 @@ consumeStream():
 - Optional start/end date pickers
 - Tags tag input (Enter to add, X to remove)
 - Position multi-select checkbox list
-- Create mode: `POST /api/campaigns`, redirects to `/campaigns`
+- Create mode: `POST /api/campaigns` via `apiFetch()`, redirects to `/campaigns`
 
 **Props:**
 
@@ -297,14 +458,57 @@ consumeStream():
 - Experience years number input
 - Skills tag input (Enter to add, X to remove)
 - CV textarea (full text)
-- Create mode: `POST /api/candidates`, redirects to `/setup`
-- Edit mode: `PATCH /api/candidates/{id}`, redirects to `/candidates`
+- Create mode: `POST /api/candidates` via `apiFetch()`, redirects to `/setup`
+- Edit mode: `PATCH /api/candidates/{id}` via `apiFetch()`, redirects to `/candidates`
 
 **Props:**
 
 | Prop | Type | Description |
 |------|------|-------------|
 | `initialData` | `{id, name, email, skills, experienceYears, cv}` | Optional. When provided, form enters edit mode |
+
+---
+
+## Custom Hooks
+
+### `usePlaybackRate`
+
+**Location:** `src/lib/use-playback-rate.ts`
+
+**Type:** Client-side React hook
+
+**Responsibilities:**
+- Provide a persistent playback-rate preference for AI voice audio
+- Default to `1.0x` (normal speed)
+- Persist selected rate to `localStorage`
+- Validate against allowed rates: `0.5`, `0.75`, `1.0`, `1.25`, `1.5`, `2.0`
+
+**Return value:** `[rate, setRate]` tuple where:
+- `rate` is the current validated playback rate
+- `setRate` accepts a number and clamps it to the allowed values
+
+**Usage:**
+
+```tsx
+import { usePlaybackRate } from "@/lib/use-playback-rate";
+
+function Player() {
+  const [playbackRate, setPlaybackRate] = usePlaybackRate();
+
+  return (
+    <select value={playbackRate} onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}>
+      <option value={0.5}>0.5x</option>
+      <option value={1.0}>1.0x</option>
+      <option value={2.0}>2.0x</option>
+    </select>
+  );
+}
+```
+
+**Pages using it:**
+- `src/app/interview/[id]/voice/page.tsx` — Voice interview playback (streaming + fallback)
+
+**Note:** The transcript page does **not** use this hook. Each interviewer message there has its own independent playback-rate state, so users can set different speeds for different messages.
 
 ---
 
@@ -332,6 +536,9 @@ RootLayout
     ├── InterviewPage
     │   └── MessageBubble (×N, memoized)
     │       └── MarkdownRenderer (memoized, interviewer only)
+    ├── VoiceInterviewPage
+    │   ├── AudioPlayer (interviewer messages)
+    │   └── AudioRecorder (candidate input)
     ├── TranscriptPage
     │   ├── MarkdownRenderer (interviewer messages)
     │   ├── ScoreInput (human calibration)

@@ -33,7 +33,10 @@ This document defines the conventions, standards, and expectations for AI-assist
 - Rich Markdown rendering with syntax highlighting
 - Anonymous session links (UUID-based)
 
-**Repository root:** `D:\Working\Projects\ollama-chat-react`
+**Repository root:** `D:\Working\Projects\adaptive-interview`
+
+**Related repositories:**
+- Backend API: [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api)
 
 ---
 

@@ -1,20 +1,45 @@
-import { db } from "@/lib/db";
-import { candidates } from "@/lib/schema";
-import { eq } from "drizzle-orm";
-import { notFound } from "next/navigation";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { apiFetch } from "@/lib/api-client";
+import type { Candidate } from "@/lib/types";
 import CandidateForm from "../../new/CandidateForm";
 
-export const dynamic = "force-dynamic";
+export default function EditCandidatePage() {
+  const { id } = useParams() as { id: string };
+  const [candidate, setCandidate] = useState<Candidate | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-export default async function EditCandidatePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const rows = await db.select().from(candidates).where(eq(candidates.id, id));
+  useEffect(() => {
+    if (!id) return;
+    apiFetch(`/api/candidates/${id}`)
+      .then((r) => {
+        if (r.status === 404) throw new Error("Candidate not found");
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data: Candidate) => setCandidate(data))
+      .catch((err) => setError(err.message || "Failed to load candidate"))
+      .finally(() => setLoading(false));
+  }, [id]);
 
-  if (rows.length === 0) {
-    notFound();
+  if (loading) {
+    return (
+      <div className="min-h-screen p-8 bg-zinc-50 dark:bg-zinc-950">
+        <p className="text-zinc-500 dark:text-zinc-400">Loading candidate...</p>
+      </div>
+    );
   }
 
-  const candidate = rows[0];
+  if (error || !candidate) {
+    return (
+      <div className="min-h-screen p-8 bg-zinc-50 dark:bg-zinc-950">
+        <p className="text-red-600 dark:text-red-400">{error || "Candidate not found"}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen p-8 bg-zinc-50 dark:bg-zinc-950">

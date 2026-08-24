@@ -9,7 +9,7 @@ export const developmentConfig: AppConfig = {
     baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
     chatModel: process.env.OLLAMA_MODEL || "llama3.1",
     embedModel: process.env.OLLAMA_EMBED_MODEL || "mxbai-embed-large",
-    chatTimeoutMs: 60_000, // 60s — generous for local dev with model loading
+    chatTimeoutMs: 120_000, // 120s — kimi-k2.6:cloud needs more time for long context
     embedTimeoutMs: 15_000, // 15s
     retries: 1,
   },
@@ -21,5 +21,20 @@ export const developmentConfig: AppConfig = {
     enableStreaming: true,
     enableEvaluations: true,
     enableEmbeddings: true,
+  },
+  mcp: {
+    enabled: process.env.MCP_ENABLED === "true",
+    authToken: process.env.MCP_AUTH_TOKEN || "",
+  },
+  auth: {
+    apiToken: process.env.API_AUTH_TOKEN || "",
+  },
+  audio: {
+    sttUrl: process.env.AUDIOCPP_BASE_URL || "http://localhost:8080",
+    gatewayUrl: process.env.AUDIO_GATEWAY_URL || "http://localhost:8082",
+    sttModel: process.env.AUDIOCPP_STT_MODEL || "stt",
+    defaultEngine: (process.env.DEFAULT_TTS_ENGINE as "kokoro" | "piper") || "kokoro",
+    defaultVoice: process.env.DEFAULT_VOICE || "diem_trinh",
+    timeoutMs: 60_000,
   },
 };

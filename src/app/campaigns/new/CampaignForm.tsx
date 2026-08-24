@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { apiFetch } from "@/lib/api-client";
 
 interface CampaignFormProps {
   positions: { id: string; title: string }[];
@@ -55,7 +56,7 @@ export default function CampaignForm({ positions }: CampaignFormProps) {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/campaigns", {
+      const res = await apiFetch("/api/campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

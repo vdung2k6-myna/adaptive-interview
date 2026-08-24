@@ -41,11 +41,13 @@ const html = useMemo(() => {
 **Risk:** User input flows into database queries.
 
 **Mitigation:**
-- **Drizzle ORM** uses parameterized queries exclusively
-- Raw SQL is only used in `embeddings.ts` for vector similarity, with hardcoded table names
+- All database access happens in the **Express backend** (`adaptive-interview-api`)
+- The Next.js frontend has no database connection
+- **Drizzle ORM** in the backend uses parameterized queries exclusively
+- Raw SQL in the backend is only used in `embeddings.ts` for vector similarity, with hardcoded table names
 - No user input is concatenated into SQL strings
 
-**Code:**
+**Code (backend):**
 
 ```typescript
 // Safe — Drizzle handles parameterization
@@ -72,35 +74,71 @@ sql`SELECT * FROM embeddings WHERE source_type = ${sourceType}`;
 
 ### 4. SSRF (Server-Side Request Forgery)
 
-**Risk:** API endpoints could make requests to internal services.
+**Risk:** The backend could make unauthorized requests to internal services.
 
 **Mitigation:**
-- `OLLAMA_BASE_URL` is the only external URL the server calls
-- No user-controlled URLs are fetched server-side
-- All fetch calls are to known endpoints (`/api/chat`, `/api/embeddings`)
+- All external calls (Ollama, Audio Gateway, audio.cpp) are centralized in the **Express backend**
+- The Next.js frontend does not make server-side external calls at all
+- No user-controlled URLs are fetched server-side in the backend
+- Backend fetch calls are restricted to known endpoints (`/api/chat`, `/api/embeddings`, `/v1/audio/speech`)
 
-### 5. Authentication (Currently Absent)
+### 5. API Key Authentication
 
-**Status:** No authentication or authorization.
+**Status:** Bearer token authentication on all API routes. Validation is performed by the **Express backend** (`adaptive-interview-api`).
+
+**How it works:**
+- `API_AUTH_TOKEN` environment variable sets the shared secret (configured in the backend)
+- The backend validates `Authorization: Bearer <token>` header on every API request
+- If `API_AUTH_TOKEN` is not set, auth is disabled (backward-compatible for local dev)
+- The frontend uses `apiFetch()` wrapper (reads `NEXT_PUBLIC_API_TOKEN`) to inject the header automatically in browser requests
+- Next.js development rewrites proxy `/api/*` to the backend, so the backend sees and validates all requests
 
 **Impact:**
-- Anyone with a session URL can participate in an interview
-- Anyone can view transcripts and evaluations
-- Anyone can create positions, candidates, and sessions
+- Prevents unauthorized API access when token is configured
+- Session URLs still allow anonymous interview participation (by design)
+
+**Environment variables:**
+
+| Variable | Location | Purpose | Required |
+|----------|----------|---------|----------|
+| `API_AUTH_TOKEN` | Backend `.env` | Server-side secret; enables auth when set | No (optional) |
+| `NEXT_PUBLIC_API_TOKEN` | Frontend `.env.local` | Client-side copy; must match `API_AUTH_TOKEN` | Only if auth enabled |
 
 **Recommendation for production:**
-- Add OAuth or session-based auth
-- Add role-based access (recruiter, admin, candidate)
+- Set a strong `API_AUTH_TOKEN` (≥32 characters) in the backend
+- Set `NEXT_PUBLIC_API_TOKEN` to the same value in the frontend
+- Add OAuth or session-based auth for recruiter UI
+- Add role-based access control
 - Validate that users can only access their own sessions
+
+### 6. Voice Data Privacy
+
+**Risk:** Voice interviews generate audio recordings that may contain PII (names, personal details spoken aloud).
+
+**Mitigation:**
+- Audio files are stored on the **backend local filesystem** (`/tmp/audio/{sessionId}/`), not in the database
+- The frontend never receives or stores raw audio blobs — only plays served files
+- Audio filenames use **UUIDs**, not candidate names (e.g. `candidate-{uuid}.webm`, `interviewer-{uuid}.wav`)
+- Audio files are **not included** in session exports or MCP tool responses
+- Session deletion does not automatically delete audio files (manual cleanup required)
+- The Audio Gateway is **read-only** for TTS — it never receives or stores STT audio
+
+**Recommendation:**
+- Implement a retention policy in the backend (e.g. delete audio files after 30 days)
+- Encrypt audio files at rest if required by compliance
+- Audit that audio URLs are not logged with candidate identifiers
 
 ## Environment Variables
 
 **Sensitive variables that should never be exposed:**
 
-| Variable | Risk | Mitigation |
-|----------|------|------------|
-| `DATABASE_URL` | Contains DB credentials | Only in `.env.local`, never commit |
-| `OLLAMA_BASE_URL` | Could expose internal endpoint | Keep in `.env.local` |
+| Variable | Location | Risk | Mitigation |
+|----------|----------|------|------------|
+| `DATABASE_URL` | Backend `.env` | Contains DB credentials | Never commit |
+| `OLLAMA_BASE_URL` | Backend `.env` | Could expose internal endpoint | Keep in backend `.env` |
+| `MCP_AUTH_TOKEN` | Backend `.env` | Could expose analytics access | Rotate regularly, never commit |
+| `API_AUTH_TOKEN` | Backend `.env` | Grants full API access | Rotate regularly, never commit |
+| `NEXT_PUBLIC_API_TOKEN` | Frontend `.env.local` | Client-side API token | Must match backend `API_AUTH_TOKEN`; never commit |
 
 **Non-sensitive variables:**
 
@@ -114,7 +152,8 @@ sql`SELECT * FROM embeddings WHERE source_type = ${sourceType}`;
 
 Before deploying to production:
 
-- [ ] Add authentication (OAuth, sessions, or API keys)
+- [x] Add API key authentication (Bearer token on all routes)
+- [ ] Add OAuth or session-based auth for recruiter UI
 - [ ] Add authorization (role-based access control)
 - [ ] Enable HTTPS
 - [ ] Set up CSP (Content Security Policy) headers
@@ -125,6 +164,43 @@ Before deploying to production:
 - [ ] Rotate database credentials
 - [ ] Set up audit logging
 - [ ] Run `npm audit` and fix vulnerabilities
+
+## Voice Interview Security
+
+Voice interviews introduce additional security and privacy considerations.
+
+### Audio Data Storage
+
+- **Location:** Audio files are stored on the local filesystem (`/tmp/audio/{sessionId}/` by default)
+- **Filenames:** Use random UUIDs — no candidate names or PII in filenames
+- **Access:** Served via `/audio/{sessionId}/{filename}` route with path traversal protection
+- **Retention:** No automatic cleanup — implement TTL or cron job for production
+
+### Privacy Considerations
+
+- Voice data is biometric — consider GDPR / CCPA implications
+- Same anonymization rules as text: audio files are tied to session UUID, not candidate identity
+- audio.cpp server should run on local network only (not exposed to internet)
+- No encryption at rest for audio files (future enhancement)
+
+### Environment Variables
+
+| Variable | Risk | Mitigation |
+|----------|------|------------|
+| `AUDIOCPP_BASE_URL` | Could expose internal audio endpoint | Keep in `.env.local`, local network only |
+
+---
+
+## MCP Server Security
+
+> **Location:** The MCP analytics server (`/api/mcp`) lives in the `adaptive-interview-api` backend repository. See the backend documentation for its security model.
+
+The MCP server follows a defense-in-depth security model:
+
+- **Authentication:** `MCP_AUTH_TOKEN` via `Authorization: Bearer <token>`, validated in the backend with timing-safe comparison
+- **Anonymization:** All tool responses strip PII (names, emails, CVs, raw responses) and replace `candidateId` with stable anonymized UUIDs
+- **Read-only:** No tool performs writes, updates, or deletions
+- **Recommendation:** Do not expose `/api/mcp` to the public internet without rate limiting
 
 ## Reporting Security Issues
 

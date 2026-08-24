@@ -1,24 +1,52 @@
-import { db } from "@/lib/db";
-import { candidates, interviewSessions } from "@/lib/schema";
-import { count } from "drizzle-orm";
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { apiFetch } from "@/lib/api-client";
+import type { Candidate } from "@/lib/types";
 import DeleteButton from "@/components/DeleteButton";
 
-export const dynamic = "force-dynamic";
+export default function CandidatesPage() {
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-export default async function CandidatesPage() {
-  const candidateRows = await db.select().from(candidates);
+  useEffect(() => {
+    apiFetch("/api/candidates")
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data: Candidate[]) => setCandidates(data))
+      .catch(() => setError("Failed to load candidates"))
+      .finally(() => setLoading(false));
+  }, []);
 
-  // Count sessions per candidate
-  const sessionCounts = await db
-    .select({
-      candidateId: interviewSessions.candidateId,
-      count: count(),
-    })
-    .from(interviewSessions)
-    .groupBy(interviewSessions.candidateId);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+        <div className="mx-auto max-w-5xl">
+          <p className="text-zinc-500 dark:text-zinc-400">Loading candidates...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const countMap = new Map(sessionCounts.map((s) => [s.candidateId, s.count]));
+  if (error) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+        <div className="mx-auto max-w-5xl">
+          <p className="text-red-600 dark:text-red-400">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
@@ -45,7 +73,7 @@ export default async function CandidatesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {candidateRows.length === 0 ? (
+              {candidates.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
                     No candidates yet.{" "}
@@ -53,8 +81,8 @@ export default async function CandidatesPage() {
                   </td>
                 </tr>
               ) : (
-                candidateRows.map((c) => {
-                  const inUse = countMap.get(c.id) || 0;
+                candidates.map((c) => {
+                  const inUse = c.sessionCount || 0;
                   const canEdit = inUse === 0;
                   return (
                     <tr key={c.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
@@ -92,7 +120,11 @@ export default async function CandidatesPage() {
                               >
                                 Edit
                               </Link>
-                              <DeleteButton id={c.id} type="candidate" />
+                              <DeleteButton
+                                id={c.id}
+                                type="candidate"
+                                onDelete={() => setCandidates((prev) => prev.filter((item) => item.id !== c.id))}
+                              />
                             </>
                           ) : (
                             <span className="text-xs text-zinc-400 dark:text-zinc-500">In use</span>

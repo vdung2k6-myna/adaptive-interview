@@ -32,27 +32,43 @@ The Adaptive Interview Engine is a Next.js application that conducts AI-powered 
 
 ### Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Framework | Next.js 16 (App Router) |
-| Language | TypeScript 5 |
-| Styling | Tailwind CSS 4 |
-| Database | PostgreSQL 15+ |
-| ORM | Drizzle ORM |
-| AI Backend | Ollama (local or remote) |
-| Embedding | mxbai-embed-large via Ollama |
-| Fonts | Geist Sans + Mono |
+| Layer | Technology | Repository |
+|-------|------------|------------|
+| Frontend Framework | Next.js 16 (App Router) | This repo |
+| Language | TypeScript 5 | Both |
+| Styling | Tailwind CSS 4 | This repo |
+| Database | PostgreSQL 15+ | Backend |
+| ORM | Drizzle ORM | Both |
+| Backend API | Express.js | `adaptive-interview-api` |
+| AI Backend | Ollama (local or remote) | Backend |
+| Embedding | mxbai-embed-large via Ollama | Backend |
+| Fonts | Geist Sans + Mono | This repo |
 
 ## Getting Started
 
 See [Setup Guide](SETUP.md) for full instructions.
 
 ```bash
-# Quick start
+# 1. Clone frontend
+git clone https://github.com/vdung2k6-myna/adaptive-interview.git adaptive-interview
+cd adaptive-interview
 npm install
-# Configure .env.local (see SETUP.md)
-npx drizzle-kit migrate
-npx tsx src/lib/seed.ts
+
+# 2. Clone backend (separate repo)
+git clone https://github.com/vdung2k6-myna/adaptive-interview-api.git ../adaptive-interview-api
+cd ../adaptive-interview-api
+npm install
+
+# 3. Configure environment (see SETUP.md)
+#    - Backend: .env (DATABASE_URL, OLLAMA_BASE_URL, etc.)
+#    - Frontend: .env.local (NEXT_PUBLIC_API_TOKEN if auth enabled)
+
+# 4. Start backend (port 4000)
+cd ../adaptive-interview-api
+npm run dev
+
+# 5. Start frontend (port 3000) — in another terminal
+cd ../adaptive-interview
 npm run dev
 ```
 
@@ -62,19 +78,33 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         CLIENT                               │
+│                     FRONTEND (Next.js)                        │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
 │  │ Dashboard│  │ Interview│  │ Transcript│  │ Compare  │   │
-│  │  (SSR)   │  │ (Client) │  │ (Client) │  │ (Client) │   │
+│  │ (Client) │  │ (Client) │  │ (Client) │  │ (Client) │   │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │ Positions│  │ Candidates│  │ Campaigns│  │  Setup   │   │
+│  │  (SSR)   │  │  (SSR)   │  │  (SSR)   │  │  (SSR)   │   │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   │
 └───────┼─────────────┼─────────────┼─────────────┼───────────┘
         │             │             │             │
         └─────────────┴─────────────┴─────────────┘
                           │
+              fetch() / apiFetch()
+                          │
                     ┌─────┴─────┐
-                    │ Next.js   │
-                    │ API Routes│
+                    │  Next.js  │
+                    │  Rewrites │
+                    │ (dev only)│
                     └─────┬─────┘
+                          │
+┌─────────────────────────┴───────────────────────────────────┐
+│                     BACKEND (Express)                         │
+│              /api/*  →  CRUD, Streaming, Voice, MCP        │
+│              /audio/* →  Audio file serving                   │
+│                     (port 4000)                               │
+└─────────────────────────┬───────────────────────────────────┘
                           │
         ┌─────────────────┼─────────────────┐
         │                 │                 │

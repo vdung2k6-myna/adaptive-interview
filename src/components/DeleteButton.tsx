@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/api-client";
 
 interface DeleteButtonProps {
   id: string;
   type: "position" | "candidate" | "campaign";
+  onDelete?: () => void;
 }
 
-export default function DeleteButton({ id, type }: DeleteButtonProps) {
+export default function DeleteButton({ id, type, onDelete }: DeleteButtonProps) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
 
@@ -25,12 +27,13 @@ export default function DeleteButton({ id, type }: DeleteButtonProps) {
       } else {
         endpoint = `/api/campaigns/${id}`;
       }
-      const res = await fetch(endpoint, { method: "DELETE" });
+      const res = await apiFetch(endpoint, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         alert(data.error || "Failed to delete");
         return;
       }
+      onDelete?.();
       router.refresh();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to delete");

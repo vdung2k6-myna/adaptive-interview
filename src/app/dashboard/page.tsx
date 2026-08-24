@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { apiFetch } from "@/lib/api-client";
 
 interface Session {
   id: string;
   status: string;
+  mode: string;
   maxTurns: number;
   currentTurn: number;
   createdAt: string;
@@ -34,7 +36,7 @@ export default function DashboardPage() {
 
   async function fetchSessions() {
     try {
-      const res = await fetch("/api/sessions");
+      const res = await apiFetch("/api/sessions");
       if (!res.ok) throw new Error("Failed to fetch sessions");
       const data: Session[] = await res.json();
       setSessions(data);
@@ -82,6 +84,18 @@ export default function DashboardPage() {
     return (
       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${classes[status] || classes.created}`}>
         {status.replace("_", " ")}
+      </span>
+    );
+  }
+
+  function modeBadge(mode: string) {
+    const classes: Record<string, string> = {
+      text: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+      voice: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200",
+    };
+    return (
+      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${classes[mode] || classes.text}`}>
+        {mode === "voice" ? "🎙️ Voice" : "💬 Text"}
       </span>
     );
   }
@@ -208,7 +222,12 @@ export default function DashboardPage() {
                     <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">
                       {s.position?.title || "Unknown"} — {s.position?.level}
                     </td>
-                    <td className="px-4 py-3">{statusBadge(s.status)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {statusBadge(s.status)}
+                        {modeBadge(s.mode)}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">
                       {s.currentTurn}/{s.maxTurns}
                     </td>
@@ -238,6 +257,14 @@ export default function DashboardPage() {
                         >
                           {copiedId === s.id ? "Copied!" : "Copy Link"}
                         </button>
+                        {s.mode === "voice" && s.status !== "completed" && (
+                          <Link
+                            href={`/interview/${s.id}/voice`}
+                            className="text-sm text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-200 underline"
+                          >
+                            Join Voice
+                          </Link>
+                        )}
                         <Link
                           href={`/interview/${s.id}/transcript`}
                           className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline"

@@ -1,24 +1,52 @@
-import { db } from "@/lib/db";
-import { positions, interviewSessions } from "@/lib/schema";
-import { count } from "drizzle-orm";
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { apiFetch } from "@/lib/api-client";
+import type { Position } from "@/lib/types";
 import DeleteButton from "@/components/DeleteButton";
 
-export const dynamic = "force-dynamic";
+export default function PositionsPage() {
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-export default async function PositionsPage() {
-  const positionRows = await db.select().from(positions);
+  useEffect(() => {
+    apiFetch("/api/positions")
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((data: Position[]) => setPositions(data))
+      .catch(() => setError("Failed to load positions"))
+      .finally(() => setLoading(false));
+  }, []);
 
-  // Count sessions per position
-  const sessionCounts = await db
-    .select({
-      positionId: interviewSessions.positionId,
-      count: count(),
-    })
-    .from(interviewSessions)
-    .groupBy(interviewSessions.positionId);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+        <div className="mx-auto max-w-5xl">
+          <p className="text-zinc-500 dark:text-zinc-400">Loading positions...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const countMap = new Map(sessionCounts.map((s) => [s.positionId, s.count]));
+  if (error) {
+    return (
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+        <div className="mx-auto max-w-5xl">
+          <p className="text-red-600 dark:text-red-400">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
@@ -46,7 +74,7 @@ export default async function PositionsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {positionRows.length === 0 ? (
+              {positions.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
                     No positions yet.{" "}
@@ -54,8 +82,8 @@ export default async function PositionsPage() {
                   </td>
                 </tr>
               ) : (
-                positionRows.map((p) => {
-                  const inUse = countMap.get(p.id) || 0;
+                positions.map((p) => {
+                  const inUse = p.sessionCount || 0;
                   const canEdit = inUse === 0;
                   return (
                     <tr key={p.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
@@ -91,7 +119,11 @@ export default async function PositionsPage() {
                               >
                                 Edit
                               </Link>
-                              <DeleteButton id={p.id} type="position" />
+                              <DeleteButton
+                                id={p.id}
+                                type="position"
+                                onDelete={() => setPositions((prev) => prev.filter((item) => item.id !== p.id))}
+                              />
                             </>
                           ) : (
                             <span className="text-xs text-zinc-400 dark:text-zinc-500">In use</span>

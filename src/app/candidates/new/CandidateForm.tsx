@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/api-client";
 
 interface CandidateFormProps {
   initialData?: {
@@ -68,7 +69,7 @@ export default function CandidateForm({ initialData }: CandidateFormProps) {
       const url = isEditing ? `/api/candidates/${initialData.id}` : "/api/candidates";
       const method = isEditing ? "PATCH" : "POST";
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

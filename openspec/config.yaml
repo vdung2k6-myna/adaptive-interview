@@ -1,0 +1,30 @@
+schema: spec-driven
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+context: |
+  Tech stack: Next.js 16, React 19, TypeScript, Tailwind CSS v4
+  Database: PostgreSQL (local instance, pgvector enabled for future use)
+  ORM: Drizzle ORM with drizzle-kit for migrations
+  Authentication: Anonymous session tokens (UUID in URL) for first slice
+  LLM: Ollama running locally
+  State management: React hooks (useState, useEffect)
+  Styling: Tailwind CSS with Geist fonts
+  API: Next.js App Router with API routes
+  Features: AI-driven adaptive job interview platform
+  Code style: React Compiler enabled, ESLint configured
+  Project structure: App Router pattern with lib/ for shared logic
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+rules:
+  proposal:
+    - Keep proposals under 500 words
+    - Always include a "Non-goals" section
+    - Focus on adaptive question generation and session management
+  tasks:
+    - Break tasks into chunks of max 2 hours
+    - Ensure all new features integrate with Drizzle ORM and Postgres
+    - Maintain responsive design with Tailwind CSS
+    - Follow Next.js App Router conventions
