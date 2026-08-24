@@ -116,6 +116,7 @@ All recent changes have been archived. See `openspec/changes/archive/` for compl
 
 | Date | Change | Description |
 |------|--------|-------------|
+| 2026-08-24 | `reconcile-adaptive-interview-frontend` | Replaced published repo contents with frontend-only codebase and updated cross-repo links |
 | 2026-08-24 | `resync-docs-after-backend-extraction` | Resynced frontend and backend documentation after backend extraction |
 | 2026-08-22 | `consolidate-audio-services-in-backend` | Moved all audio services to backend repo |
 | 2026-08-22 | `complete-backend-extraction` | Extracted all API routes into standalone Express server |
