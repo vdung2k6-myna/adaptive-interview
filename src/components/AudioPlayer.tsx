@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 interface AudioPlayerProps {
   audioUrl: string;
@@ -171,7 +172,11 @@ export default function AudioPlayer({ audioUrl, transcript, role = "interviewer"
 
       {showTranscript && (
         <div className="mt-2 rounded-lg bg-zinc-50 p-3 text-sm text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
-          {transcript}
+          {role === "interviewer" ? (
+            <MarkdownRenderer content={transcript} />
+          ) : (
+            <p className="whitespace-pre-wrap">{transcript}</p>
+          )}
         </div>
       )}
     </div>

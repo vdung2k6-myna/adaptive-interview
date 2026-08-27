@@ -83,7 +83,6 @@ export default function VoiceInterviewPage() {
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const lastInterviewerMsgRef = useRef<VoiceMessage | undefined>(undefined);
-  const firstAutoplayDoneRef = useRef(false);
   const playbackRateRef = useRef(playbackRate);
 
   useEffect(() => {
@@ -138,7 +137,7 @@ export default function VoiceInterviewPage() {
     }
   }
 
-  async function startInterview() {
+  async function startInterview(): Promise<VoiceMessage | null> {
     setProcessing(true);
     setProcessingStep("Generating first question...");
     setError("");
@@ -156,16 +155,19 @@ export default function VoiceInterviewPage() {
       }
 
       const result = await res.json();
+      const interviewerMessage = result.interviewerMessage as VoiceMessage;
       setData((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
-          messages: [result.interviewerMessage],
+          messages: [interviewerMessage],
           session: { ...prev.session, ...result.session },
         };
       });
+      return interviewerMessage;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
+      return null;
     } finally {
       setProcessing(false);
       setProcessingStep("");
@@ -191,8 +193,43 @@ export default function VoiceInterviewPage() {
       }
     }
 
+    // Set up a sentence queue now, inside the user gesture, so the first
+    // question can auto-play without relying on the <audio> element's
+    // stricter autoplay policy.
+    if (sentenceQueueRef.current) {
+      sentenceQueueRef.current.stop();
+    }
+    if (audioCtxRef.current) {
+      sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
+        playbackRate,
+        onStart: (index) => {
+          setQueueCurrentIndex(index);
+          setQueueIsPlaying(true);
+          setQueueHasError(false);
+        },
+        onEnd: () => {
+          // UI updates handled by onStart of next item or onFinished
+        },
+        onError: () => {
+          setQueueHasError(true);
+          setQueueIsPlaying(false);
+        },
+        onFinished: () => {
+          setQueueIsPlaying(false);
+          setQueueCurrentIndex(-1);
+          setTimeout(() => {
+            setStreamItems([]);
+          }, 2000);
+        },
+      });
+    }
+
     setInterviewStarted(true);
-    await startInterview();
+    const firstMessage = await startInterview();
+
+    if (firstMessage?.audioUrl && sentenceQueueRef.current) {
+      sentenceQueueRef.current.enqueue(0, firstMessage.audioUrl, firstMessage.content);
+    }
   }
 
   // Fallback to non-streaming turn endpoint
@@ -227,23 +264,14 @@ export default function VoiceInterviewPage() {
         };
       });
 
-      // Auto-play interviewer audio
-      if (result.interviewerMessage.audioUrl) {
-        setTimeout(() => {
-          if (audioPlayerRef.current) {
-            audioPlayerRef.current.src = result.interviewerMessage.audioUrl;
-            audioPlayerRef.current.playbackRate = playbackRate;
-            audioPlayerRef.current.onended = () => {
-              if (audioPlayerRef.current) {
-                audioPlayerRef.current.src = "";
-                audioPlayerRef.current.load();
-              }
-            };
-            audioPlayerRef.current.play().catch((err) => {
-              console.warn("[VoiceInterview] Fallback audio autoplay blocked:", err);
-            });
-          }
-        }, 300);
+      // Auto-play interviewer audio using the sentence queue that was created
+      // inside the user gesture in handleRecordingComplete.
+      if (result.interviewerMessage.audioUrl && sentenceQueueRef.current) {
+        sentenceQueueRef.current.enqueue(
+          0,
+          result.interviewerMessage.audioUrl,
+          result.interviewerMessage.content
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -540,27 +568,6 @@ export default function VoiceInterviewPage() {
     fetchSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
-
-  // Autoplay the first interviewer message after user clicks "Start Interview"
-  useEffect(() => {
-    if (!interviewStarted) return;
-    if (firstAutoplayDoneRef.current) return;
-    const firstInterviewer = data?.messages.find((m) => m.role === "interviewer");
-    if (firstInterviewer?.audioUrl && audioPlayerRef.current) {
-      firstAutoplayDoneRef.current = true;
-      audioPlayerRef.current.src = firstInterviewer.audioUrl;
-      audioPlayerRef.current.playbackRate = playbackRateRef.current;
-      audioPlayerRef.current.onended = () => {
-        if (audioPlayerRef.current) {
-          audioPlayerRef.current.src = "";
-          audioPlayerRef.current.load();
-        }
-      };
-      audioPlayerRef.current.play().catch((err) => {
-        console.warn("[VoiceInterview] First question autoplay blocked:", err);
-      });
-    }
-  }, [interviewStarted, data]);
 
   if (loading) {
     return (

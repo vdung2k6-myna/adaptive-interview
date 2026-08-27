@@ -4,6 +4,100 @@
 
 ## 2026-08-27
 
+### Fix First Question Auto-Play in Voice Interview
+
+**Change:** `fix-voice-first-question-autoplay` (OpenSpec)
+
+**Problem:** After clicking "Start Interview" in voice mode, the first generated question appeared on screen but did not play audio automatically. Candidates had to press the AudioPlayer play button manually. This happened because the previous autoplay logic used a hidden `<audio>` element and tried to call `play()` only after the async `/api/voice/start` round-trip completed. By then, the browser's user-gesture window for autoplay had often closed (especially on mobile), or the audio element was not ready.
+
+**Solution:** Move first-question autoplay into the same user-gesture handler that creates the AudioContext. `handleStartInterview` now creates a `SentenceAudioQueue` synchronously inside the click handler, then calls `/api/voice/start`, and enqueues the returned audio URL when it arrives. This keeps playback within the browser's allowed autoplay window and matches how streaming turns already work.
+
+**What changed:**
+- `adaptive-interview/src/app/interview/[id]/voice/page.tsx` — `handleStartInterview` now creates the audio queue upfront and enqueues the first question for auto-play; `handleTurnFallback` also uses the same sentence queue instead of the fragile `<audio>` element; removed the old autoplay `useEffect`.
+- `docs/COMPONENTS.md` — documented the new first-question flow and the user-gesture timing requirement.
+
+**Status:** Implemented and documented. Build blocked by local `.next/standalone` lock; full build verification pending after dev server restart.
+
+---
+
+## 2026-08-27
+
+### Fix Voice TTS Speaking Markdown Formatting Characters
+
+**Change:** `fix-voice-tts-markdown-leak` (OpenSpec)
+
+**Problem:** Voice interview questions were spoken with apparent Markdown formatting characters (links read with brackets/URLs, horizontal rules pronounced as dashes, strikethrough tildes, and image alt text left wrapped in syntax), making TTS sound strange and robotic.
+
+**Solution:** Extended `stripMarkdown` in the TTS preprocessing pipeline to remove additional Markdown constructs before synthesis: links keep their display text and drop URLs, images keep their alt text, strikethrough markers are removed, and horizontal-rule lines are discarded. The processing order was adjusted so lines like `***` are not partially consumed by the italic regex.
+
+**What changed:**
+- `adaptive-interview-api/src/lib/audio/text-processing.ts` — expanded `stripMarkdown` to handle links, images, strikethrough, horizontal rules, and fenced code blocks with CRLF/escaped/literal newlines after the language tag; reordered regexes to avoid partial matches.
+- `adaptive-interview-api/src/lib/audio/text-processing.test.ts` — added tests for links, images, strikethrough, horizontal rules, mixed Markdown, and code fences with CRLF/escaped/literal newlines.
+- `adaptive-interview-api/docs/API.md` — updated voice endpoint descriptions to list the newly stripped Markdown constructs.
+
+**Status:** Implemented and documented. Manual voice interview regression test pending.
+
+---
+
+## 2026-08-27
+
+### Fix TTS Code-Block and Voice Visual Rendering
+
+**Change:** `fix-tts-code-block-whole-question` (OpenSpec)
+
+**Problem:** When the interviewer asked a question that included a fenced code block, the TTS pipeline replaced the entire block with the literal phrase `"code example"`, so the candidate heard generic filler instead of the actual code. In voice mode, the transcript shown in the UI was raw Markdown (e.g., literal backticks and language tags), making it hard to read.
+
+**Solution:**
+- Updated `stripMarkdown` in the backend to preserve the content inside fenced code blocks while still removing the fence and language tag.
+- Updated `AudioPlayer` in the frontend to render interviewer transcripts with `MarkdownRenderer`, giving candidates the same rich visual formatting used in text-mode interviews. Candidate transcripts remain plain pre-wrapped text.
+
+**What changed:**
+- `adaptive-interview-api/src/lib/audio/text-processing.ts` — fenced code-block content is now kept instead of replaced with `"code example"`.
+- `adaptive-interview-api/src/lib/audio/text-processing.test.ts` — added tests for fenced block content preservation.
+- `adaptive-interview/src/components/AudioPlayer.tsx` — interviewer transcripts render with `MarkdownRenderer`; candidate transcripts stay plain.
+- `docs/COMPONENTS.md` — updated `AudioPlayer` feature list.
+
+**Status:** Implemented and documented. Manual voice interview with code-question regression test pending.
+
+---
+
+## 2026-08-27
+
+### Fix Interviewer Non-Technical Topic Drift
+
+**Change:** `fix-interviewer-non-technical-topic-drift` (OpenSpec)
+
+**Problem:** The interviewer sometimes drifted away from technical, role-relevant questions and asked behavioral or generic questions too early, weakening the adaptive signal for technical hiring.
+
+**Solution:** Added explicit prioritization language to the system prompt in `adaptive-interview-api/src/lib/prompts.ts`. The model is now instructed to focus early turns on technical questions tied to position requirements and candidate skills, while allowing behavioral/situational questions only as natural follow-ups or after core technical coverage is solid.
+
+**What changed:**
+- `adaptive-interview-api/src/lib/prompts.ts` — added technical-first rules to `buildSystemPrompt`.
+- `docs/OLLAMA.md` — updated prompt-construction example to reflect the new guidance.
+
+**Status:** Implemented and documented. Manual regression test across early interview turns pending.
+
+---
+
+## 2026-08-27
+
+### Fix Prompt Voice-Rule Leak to Text Mode
+
+**Change:** `fix-prompt-voice-rule-leaks-to-text-mode` (OpenSpec)
+
+**Problem:** The backend's shared system prompt told the LLM to spell numbers as Vietnamese words (e.g., "ba năm") for voice interviews. Because the rule was unconditional, text-mode interviews also displayed questions like *"ba năm"* instead of *"3 năm"*, regressing the original text-only behavior. The rule was also redundant: the TTS pipeline already normalizes numbers to Vietnamese words for the Kokoro engine and leaves them raw for Piper.
+
+**Solution:** Removed the Vietnamese number-spelling instruction from `adaptive-interview-api/src/lib/prompts.ts`. Number normalization is now handled solely by the engine-aware TTS layer.
+
+**What changed:**
+- `adaptive-interview-api/src/lib/prompts.ts` — removed the voice number-spelling rule from `buildSystemPrompt`.
+
+**Status:** Implemented and documented. Manual text/voice regression tests pending.
+
+---
+
+## 2026-08-27
+
 ### Add PWA Support for Android Installability
 
 **Change:** `add-pwa-android-installability` (OpenSpec)

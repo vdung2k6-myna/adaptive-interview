@@ -206,6 +206,8 @@ import { MobileNav } from "@/components/MobileNav";
 - Seek bar with current time / duration display
 - Auto-play support (triggered by parent VoiceInterviewPage)
 - Transcript accordion (hidden by default)
+- Rich Markdown rendering for interviewer transcripts (code blocks, lists, bold/italic)
+- Plain pre-wrapped text for candidate transcripts
 - "Audio unavailable" fallback when TTS fails
 
 ---
@@ -312,6 +314,7 @@ consumeStream():
 **Responsibilities:**
 - Load voice interview session data via `apiFetch()`
 - Generate first question via `POST /api/voice/start` (apiFetch)
+- Auto-play the first question immediately after the user clicks "Start Interview"
 - Render `AudioPlayer` for each completed interviewer message
 - Render `AudioRecorder` for candidate turns
 - Show processing states between turns
@@ -332,6 +335,26 @@ consumeStream():
 | `streamItems` | `AudioQueueItem[]` | Sentence chunks for current response |
 | `streamFinished` | `boolean` | Queue playback completed |
 | `playbackRate` | `number` | AI voice playback speed (persisted via `usePlaybackRate`) |
+
+**First Question Flow:**
+
+```
+User clicks "Start Interview"
+    │
+    ├─ AudioContext is created/resumed inside the click handler (required for auto-play)
+    ├─ SentenceAudioQueue is created inside the same user gesture
+    │
+    ▼
+POST /api/voice/start
+    │
+    ▼
+Interviewer message returned with audioUrl
+    │
+    ▼
+Enqueue audioUrl in SentenceAudioQueue → ▶️ auto-play first question
+```
+
+**Key point:** the audio queue is created **synchronously inside the click handler**, before the async API call. Browser autoplay policies allow AudioContext playback only after a user gesture, and that permission can expire if we wait for the API round-trip. Creating the queue upfront and enqueuing the audio URL when it returns keeps playback within the allowed gesture window.
 
 **Turn Flow (Streaming — Incremental):**
 

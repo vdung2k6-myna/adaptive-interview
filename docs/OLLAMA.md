@@ -80,6 +80,7 @@ Remaining topics to explore: PostgreSQL, System Design
 
 Generate the next interview question. One concise question only, no preamble, no explanation.
 Use Markdown formatting. If you include code examples, specify the language after the opening backticks.
+Prioritize technical, role-relevant questions early in the interview. Behavioral questions should be natural follow-ups or come after the core technical requirements are covered.
 ```
 
 **Important:** The system prompt is sent as a `user` message (not `system` role) because some cloud/proxy Ollama models don't accept `system` role messages.
