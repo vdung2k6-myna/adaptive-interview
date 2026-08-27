@@ -172,6 +172,7 @@ import { MobileNav } from "@/components/MobileNav";
 | Prop | Type | Description |
 |------|------|-------------|
 | `onRecordingComplete` | `(blob: Blob, durationMs: number) => void` | Callback with recorded audio |
+| `onUserGesture` | `() => void` | Optional callback invoked on every recorder click (start/stop/submit) so the parent can keep a shared `AudioContext` unlocked for auto-play |
 | `disabled` | `boolean` | Optional, disables recorder |
 
 **Features:**
@@ -179,6 +180,7 @@ import { MobileNav } from "@/components/MobileNav";
 - Live waveform visualization (40 bars, updated via requestAnimationFrame)
 - Timer display during recording
 - Discard option before submitting
+- Optional `onUserGesture` hook for auto-play coordination
 
 ---
 
@@ -361,6 +363,9 @@ Enqueue audioUrl in SentenceAudioQueue → ▶️ auto-play first question
 ```
 Candidate records answer → AudioRecorder emits blob
     │
+    ├─ Submit click is a user gesture: resume shared AudioContext
+    ├─ Create fresh SentenceAudioQueue for this turn
+    │
     ▼
 POST /api/voice/stream (multipart: sessionId + audio, SSE)
     │
@@ -375,9 +380,7 @@ event: candidate → Add candidate message to state
     ├─ sentence 2 complete ──▶ TTS ──▶ event: sentence (index: 1) ──▶ ▶️ play
     │
     ├─ ... more sentences ...
-    │
-    ▼
-event: done → Add interviewer message (full audio) to state
+
 ```
 
 **Key point:** `sentence` events arrive **during** LLM generation, not after. The server detects sentence boundaries in the token stream and fires TTS immediately. The `StreamingAudioQueue` appends each chunk as it arrives and plays them gaplessly.

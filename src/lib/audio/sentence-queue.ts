@@ -22,7 +22,7 @@ export interface SentenceQueueOptions extends SentenceQueueCallbacks {
 
 interface QueueItem {
   index: number;
-  url: string;
+  audio: AudioBuffer | string;
   text?: string;
 }
 
@@ -47,14 +47,17 @@ export class SentenceAudioQueue {
     this.callbacks = callbacks;
   }
 
-  /** Call this whenever a new sentence audio URL arrives. */
-  enqueue(index: number, url: string, text?: string) {
-    this.items.push({ index, url, text });
+  /** Call this whenever a new sentence audio URL or decoded buffer arrives. */
+  enqueue(index: number, audio: AudioBuffer | string, text?: string) {
+    console.log(
+      `[SentenceAudioQueue] enqueue index=${index} isPlaying=${this.isPlaying} ctxState=${this.audioCtx.state} queueLen=${this.items.length}`
+    );
+    this.items.push({ index, audio, text });
     if (!this.isPlaying) {
       this.playNext();
-    } else {
-      // Preload the newly added item in the background
-      this.preloadItem(index, url);
+    } else if (typeof audio === "string") {
+      // Preload URL-based items in the background; buffers are already decoded.
+      this.preloadItem(index, audio);
     }
   }
 
@@ -158,44 +161,53 @@ export class SentenceAudioQueue {
 
     // Resume context if suspended (autoplay policy)
     if (this.audioCtx.state === "suspended") {
+      console.log("[SentenceAudioQueue] Resuming suspended AudioContext...");
       try {
         await this.audioCtx.resume();
-      } catch {
-        // ignore
+        console.log(`[SentenceAudioQueue] AudioContext resumed: state=${this.audioCtx.state}`);
+      } catch (err) {
+        console.warn("[SentenceAudioQueue] Failed to resume AudioContext:", err);
       }
     }
 
-    // ── Try preloaded buffer first ──────────────────────────────────────
-    let audioBuffer = this.preloaded.get(item.index);
-    this.preloaded.delete(item.index); // free memory
+    // ── Resolve audio buffer ───────────────────────────────────────────
+    let audioBuffer: AudioBuffer | undefined;
 
-    if (!audioBuffer) {
-      // Not preloaded yet — fetch + decode now
-      try {
-        const res = await fetch(item.url);
-        if (myGen !== this.liveGeneration) return;
+    if (typeof item.audio === "string") {
+      // URL-based item: try the preloaded buffer first, otherwise fetch + decode.
+      audioBuffer = this.preloaded.get(item.index);
+      this.preloaded.delete(item.index); // free memory
 
-        if (!res.ok) {
-          console.warn(`[SentenceAudioQueue] Fetch failed: ${res.status}`);
-          this.callbacks.onError?.(item.index, new Error(`HTTP ${res.status}`));
+      if (!audioBuffer) {
+        try {
+          const res = await fetch(item.audio);
+          if (myGen !== this.liveGeneration) return;
+
+          if (!res.ok) {
+            console.warn(`[SentenceAudioQueue] Fetch failed: ${res.status}`);
+            this.callbacks.onError?.(item.index, new Error(`HTTP ${res.status}`));
+            this.playNext();
+            return;
+          }
+
+          const arrayBuffer = await res.arrayBuffer();
+          if (myGen !== this.liveGeneration) return;
+
+          audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+          console.log(`[Queue] Decoded buffer duration=${audioBuffer?.duration ?? "null"}`);
+          if (myGen !== this.liveGeneration) return;
+        } catch (err) {
+          if (myGen !== this.liveGeneration) return;
+          console.warn("[SentenceAudioQueue] Playback failed:", err);
+          this.callbacks.onError?.(item.index, err);
+          this.currentSource = null;
           this.playNext();
           return;
         }
-
-        const arrayBuffer = await res.arrayBuffer();
-        if (myGen !== this.liveGeneration) return;
-
-        audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
-        console.log(`[Queue] Decoded buffer duration=${audioBuffer?.duration ?? "null"}`);
-        if (myGen !== this.liveGeneration) return;
-      } catch (err) {
-        if (myGen !== this.liveGeneration) return;
-        console.warn("[SentenceAudioQueue] Playback failed:", err);
-        this.callbacks.onError?.(item.index, err);
-        this.currentSource = null;
-        this.playNext();
-        return;
       }
+    } else {
+      // Decoded buffer provided directly (e.g. base64 audio from speak-stream).
+      audioBuffer = item.audio;
     }
 
     if (!audioBuffer || audioBuffer.duration <= 0 || !Number.isFinite(audioBuffer.duration)) {

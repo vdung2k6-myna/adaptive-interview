@@ -26,6 +26,7 @@ interface SessionData {
     id: string;
     status: string;
     mode: string;
+    language: "english" | "vietnamese";
     maxTurns: number;
     currentTurn: number;
   };
@@ -699,13 +700,14 @@ export default function VoiceInterviewPage() {
               isPlaying={queueIsPlaying}
               hasError={queueHasError}
               onPause={() => {
-                audioCtxRef.current?.suspend();
+                // Don't suspend the shared AudioContext — on mobile Safari it
+                // may never resume without a new user gesture, which breaks
+                // auto-play of the next question. Just stop the current item.
+                sentenceQueueRef.current?.stop();
                 setQueueIsPlaying(false);
               }}
               onResume={() => {
-                if (audioCtxRef.current?.state === "suspended") {
-                  audioCtxRef.current.resume().catch(() => {});
-                }
+                // Resume only the queue UI state, not the underlying context.
                 setQueueIsPlaying(true);
               }}
             />
@@ -763,6 +765,22 @@ export default function VoiceInterviewPage() {
               )}
               <AudioRecorder
                 onRecordingComplete={handleRecordingComplete}
+                onUserGesture={() => {
+                  // Every recorder interaction is a user gesture: ensure the
+                  // shared AudioContext is running so the next question can
+                  // auto-play after backend processing.
+                  if (!audioCtxRef.current) {
+                    const Ctx =
+                      window.AudioContext ||
+                      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+                    if (Ctx) {
+                      audioCtxRef.current = new Ctx();
+                    }
+                  }
+                  if (audioCtxRef.current?.state === "suspended") {
+                    audioCtxRef.current.resume().catch(() => {});
+                  }
+                }}
                 disabled={processing}
               />
             </>

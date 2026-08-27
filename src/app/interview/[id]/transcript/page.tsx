@@ -84,6 +84,7 @@ interface SessionData {
     maxTurns: number;
     currentTurn: number;
     ttsProvider: string;
+    language: "english" | "vietnamese";
     createdAt: string;
     completedAt: string | null;
   };
@@ -160,7 +161,7 @@ export default function TranscriptPage() {
   // Reorder buffer: holds chunks that arrived out-of-order until all
   // previous indices are ready, ensuring playback always starts from 0.
   const pendingChunksRef = useRef<
-    Map<number, { audioUrl: string; text: string }>
+    Map<number, { audio: AudioBuffer | null; text: string }>
   >(new Map());
   const nextExpectedIndexRef = useRef(0);
 
@@ -389,14 +390,14 @@ export default function TranscriptPage() {
   }
 
   /** Flush pending chunks in strict index order starting from nextExpectedIndex.
-   *  Skips chunks where audioUrl is empty (TTS failed). */
+   *  Skips chunks where audio is null (TTS failed). */
   function flushPendingChunks() {
     if (!sentenceQueueRef.current) return;
     let idx = nextExpectedIndexRef.current;
     while (pendingChunksRef.current.has(idx)) {
       const chunk = pendingChunksRef.current.get(idx)!;
-      if (chunk.audioUrl) {
-        sentenceQueueRef.current.enqueue(idx, chunk.audioUrl, chunk.text);
+      if (chunk.audio) {
+        sentenceQueueRef.current.enqueue(idx, chunk.audio, chunk.text);
       }
       pendingChunksRef.current.delete(idx);
       idx++;
@@ -408,7 +409,8 @@ export default function TranscriptPage() {
     text: string,
     msgId: string,
     engine?: string,
-    playbackRate = 1
+    playbackRate = 1,
+    language?: "english" | "vietnamese"
   ) {
     const currentGen = ++speakGenerationRef.current;
 
@@ -467,7 +469,7 @@ export default function TranscriptPage() {
       const res = await apiFetch(`${backendUrl}/api/voice/speak-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, engine }),
+        body: JSON.stringify({ text, engine, language }),
         signal: abortCtrl.signal,
       });
 
@@ -505,25 +507,29 @@ export default function TranscriptPage() {
             switch (eventName) {
               case "sentence": {
                 if (currentGen !== speakGenerationRef.current) break; // stale stream from previous Speak
-                const s = parsed as { index: number; text: string; audioUrl: string | null };
+                const s = parsed as { index: number; text: string; audioData: string | null };
                 if (seenSentenceIndicesRef.current.has(s.index)) break;
                 seenSentenceIndicesRef.current.add(s.index);
 
-                if (s.audioUrl) {
-                  // Buffer chunk; flush will enqueue in strict index order
-                  pendingChunksRef.current.set(s.index, {
-                    audioUrl: s.audioUrl,
-                    text: s.text,
-                  });
-                  flushPendingChunks();
-                } else {
-                  // TTS failed for this chunk — skip it so playback isn't blocked
-                  pendingChunksRef.current.set(s.index, {
-                    audioUrl: "",
-                    text: s.text,
-                  });
-                  flushPendingChunks();
+                let audioBuffer: AudioBuffer | null = null;
+                if (s.audioData && audioCtxRef.current) {
+                  try {
+                    const binaryString = atob(s.audioData);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                      bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    audioBuffer = await audioCtxRef.current.decodeAudioData(bytes.buffer);
+                  } catch (err) {
+                    console.warn("[Transcript] Failed to decode audioData:", err);
+                  }
                 }
+
+                pendingChunksRef.current.set(s.index, {
+                  audio: audioBuffer,
+                  text: s.text,
+                });
+                flushPendingChunks();
                 break;
               }
 
@@ -837,7 +843,8 @@ export default function TranscriptPage() {
                                     msg.content,
                                     msg.id,
                                     sessionData?.session.ttsProvider,
-                                    getMessagePlaybackRate(msg.id)
+                                    getMessagePlaybackRate(msg.id),
+                                    sessionData?.session.language
                                   )
                             }
                             disabled={speakingMsgId !== null && speakingMsgId !== msg.id}

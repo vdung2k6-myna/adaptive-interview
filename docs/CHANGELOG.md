@@ -4,6 +4,85 @@
 
 ## 2026-08-27
 
+### Reduce Speak First-Chunk Latency on Transcript Page
+
+**Change:** `reduce-speak-first-chunk-latency` (OpenSpec)
+
+**Problem:** On the transcript page, clicking **Speak** on a long interviewer message created a noticeable delay before audio started. The backend's streaming TTS endpoint emitted an `audioUrl` per sentence, and the frontend had to fetch and decode each URL after receiving the SSE event. While the first chunk was being fetched, the backend had already synthesized many later chunks, so playback appeared to wait until the whole message was ready.
+
+**Solution:** Embed each synthesized sentence as base64 `audioData` directly in the SSE `sentence` event. The frontend decodes the buffer inside the SSE handler and passes the decoded `AudioBuffer` to `SentenceAudioQueue`, removing the per-chunk HTTP round-trip and letting the first sentence play as soon as it is synthesized.
+
+**What changed:**
+- `adaptive-interview-api/src/routes/voice.ts` — `POST /api/voice/speak-stream` now synthesizes chunks via `synthesizeSpeechWithFallback` and emits `{ index, text, audioData: base64Buffer }` instead of `{ index, text, audioUrl }`. Failed or non-synthesizable chunks emit `audioData: null` so the frontend can skip them without stalling the index sequence.
+- `adaptive-interview/src/lib/audio/sentence-queue.ts` — `enqueue()` now accepts `AudioBuffer | string`. When an `AudioBuffer` is provided, `playNext()` skips the URL fetch/decode path and starts playback immediately.
+- `adaptive-interview/src/app/interview/[id]/transcript/page.tsx` — SSE `sentence` handler decodes base64 `audioData` to an `AudioBuffer` and stores it in the pending-chunk reorder buffer. Null or undecodable chunks are treated as skipped indices.
+- `adaptive-interview-api/docs/API.md` — updated `POST /api/voice/speak-stream` SSE schema and description.
+- `adaptive-interview/docs/API.md` — added streaming TTS event schema table.
+- `adaptive-interview/docs/ARCHITECTURE.md` — noted transcript replay now uses embedded base64 audio data.
+
+**Status:** Implemented and documented. Build, lint, and API-level streaming tests pass. UI-level click-to-play verified: audio starts before SSE `done`, Stop works mid-stream, and switching messages works via Stop → Speak.
+
+---
+
+## 2026-08-27
+
+### Add Interview Language and Engine Voice Mapping
+
+**Change:** `add-interview-language-and-voice-mapping` (OpenSpec)
+
+**Problem:** Interviews always defaulted to English with no explicit language setting, and TTS voice selection was not coupled to the interview language. As a result, a Vietnamese interview could be read with an inappropriate voice, and the interviewer/evaluator had no enforced language rule.
+
+**Solution:** Add a `language` field (`english` \| `vietnamese`, default `english`) to every interview session. The language is used to (1) instruct the interviewer LLM to conduct the session in that language only, (2) select a configured TTS voice per `(engine, language)` pair, and (3) instruct the evaluator to produce feedback in that language.
+
+**Voice defaults:**
+- Kokoro English: `af_heart`
+- Piper English: `en_US-lessac-medium`
+- Vietnamese voices intentionally fall back to the services' current installed defaults so existing deployments keep working.
+
+**What changed:**
+- `adaptive-interview-api/src/lib/schema.ts` — added `language` column to `interview_sessions`.
+- `adaptive-interview-api/src/routes/sessions.ts` — `POST /api/sessions` accepts and stores `language`; `GET /api/sessions/:id` returns it.
+- `adaptive-interview-api/src/lib/prompts.ts` — `buildSystemPrompt` now includes a language rule based on `session.language`.
+- `adaptive-interview-api/src/lib/evaluation.ts` — evaluation system prompt asks for feedback in `session.language`.
+- `adaptive-interview-api/src/lib/config/index.ts`, `development.ts`, `production.ts` — added per-language voice map under `audio.voices`.
+- `adaptive-interview-api/src/lib/audio/text-processing.ts` — added `resolveVoice(engine, language)` helper; returns `undefined` for empty Vietnamese config so the service default is used. Added `resolveEngineForLanguage` to force English → Piper and Vietnamese → Kokoro at runtime, because the deployed models are language-specific.
+- `adaptive-interview-api/src/routes/voice.ts` — all TTS call sites (`/start`, `/turn`, `/stream`, `/speak`, `/speak-stream`) pass the resolved voice and engine. `/stream` completion message is localized.
+- `src/app/setup/SetupForm.tsx` — added English/Vietnamese language selector (visible in voice mode) and auto-switches the TTS provider when the language changes.
+- `src/app/interview/[id]/page.tsx`, `voice/page.tsx`, `transcript/page.tsx` — added `language` to `SessionData`; transcript Speak passes `language` to `/api/voice/speak-stream`.
+- `adaptive-interview-api/docs/API.md`, `adaptive-interview/docs/API.md`, `docs/ARCHITECTURE.md`, `docs/SETUP.md`, `adaptive-interview-api/docs/SETUP.md` — documented the new field, voice mapping, and environment variables.
+
+**English voice installation:** Piper uses `en_US-norman-medium` (already installed in `pipervoices\norman\`). Kokoro currently ships the Vietnamese model only; the backend now forces English interviews to Piper at runtime.
+
+**Follow-up fixes during validation:**
+- Runtime engine mapping hardened so English → Piper and Vietnamese → Kokoro regardless of session `ttsProvider`.
+- `splitForTTS` now merges trailing fragments shorter than 3 words or 15 characters into the previous chunk, preventing a final one-word chunk like "mèo?" from being synthesized alone.
+
+**Status:** Implemented and documented.
+
+---
+
+## 2026-08-27
+
+### Fix Subsequent Question Auto-Play in Voice Interview
+
+**Change:** `fix-voice-subsequent-question-autoplay` (OpenSpec)
+
+**Problem:** After the first question auto-played correctly, later interviewer questions did not play automatically when the candidate finished answering. Candidates had to press the play button manually. This happened because the shared `AudioContext` was suspended by the pause UI between turns, and the browser's autoplay policy does not allow an async SSE callback to resume it without a fresh user gesture.
+
+**Solution:** Keep the shared `AudioContext` running across turns. The streaming pause button now stops the current queue item instead of suspending the context. Every recorder interaction (start/stop/submit) also resumes the shared context so it stays unlocked for the next auto-play. Added diagnostic logging to `SentenceAudioQueue` to make future AudioContext issues visible in the browser console.
+
+**What changed:**
+- `adaptive-interview/src/app/interview/[id]/voice/page.tsx` — streaming pause no longer suspends `audioCtxRef`; added `onUserGesture` callback to `AudioRecorder` that resumes the shared context on every recorder click.
+- `adaptive-interview/src/components/AudioRecorder.tsx` — accepts new `onUserGesture` prop and invokes it on start recording, stop recording, and submit answer clicks.
+- `adaptive-interview/src/lib/audio/sentence-queue.ts` — logs `AudioContext` state on enqueue and resume attempts to aid mobile-autoplay debugging.
+- `docs/COMPONENTS.md` — updated `AudioRecorder` props and voice interview notes to describe the user-gesture preservation strategy.
+
+**Status:** Implemented and documented. Build passes; pre-existing lint errors in `scripts/` unrelated to this change.
+
+---
+
+## 2026-08-27
+
 ### Fix First Question Auto-Play in Voice Interview
 
 **Change:** `fix-voice-first-question-autoplay` (OpenSpec)

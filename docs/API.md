@@ -43,4 +43,14 @@ See the backend documentation for the complete REST API:
 | MCP | `/api/mcp` | MCP analytics SSE |
 | Audio | `/audio/*` | Static audio file serving |
 
-For request/response shapes, SSE event formats, and curl examples, see the backend API reference.
+### Streaming TTS Event Schema
+
+`POST /api/voice/speak-stream` (used by the transcript **Speak** button) emits Server-Sent Events. Each `sentence` event carries the synthesized audio inline:
+
+| Event | Data Shape | Description |
+|-------|-----------|-------------|
+| `sentence` | `{ index, text, audioData }` | `audioData` is a base64-encoded audio buffer (WAV). `null` means the chunk could not be synthesized. |
+| `done` | `{}` | All sentences processed |
+| `error` | `{ message }` | Fatal error (stream terminates) |
+
+For request/response shapes, full SSE event formats, and curl examples, see the backend API reference.

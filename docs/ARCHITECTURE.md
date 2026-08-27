@@ -388,6 +388,7 @@ Both the transcript page and the voice interview page use a **generation-counter
 - `SentenceAudioQueue.stop()` cancels the current source, clears pending timers, and drops queued items.
 - The fallback path checks the generation and `signal.aborted` before decoding or playing; if Stop happened while the combined-audio fetch was in flight, playback never starts.
 - Stale SSE readers (from a superseded message or an old Stop) detect the generation mismatch and return without mutating UI state.
+- Streaming replay via `POST /api/voice/speak-stream` receives each sentence as base64 `audioData` in the SSE `sentence` event. The frontend decodes the buffer and hands it directly to `SentenceAudioQueue`, eliminating the per-chunk URL fetch and letting the first sentence play as soon as it is synthesized.
 
 **Voice interview page (`src/app/interview/[id]/voice/page.tsx`)**
 - A per-turn `turnGenerationRef` is incremented every time the candidate finishes a recording.

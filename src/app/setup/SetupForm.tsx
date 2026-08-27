@@ -22,6 +22,7 @@ export default function SetupForm({
   const [candidateId, setCandidateId] = useState("");
   const [mode, setMode] = useState<"text" | "voice">("text");
   const [ttsProvider, setTtsProvider] = useState<"kokoro" | "piper">("kokoro");
+  const [language, setLanguage] = useState<"english" | "vietnamese">("english");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [interviewUrl, setInterviewUrl] = useState("");
@@ -42,7 +43,7 @@ export default function SetupForm({
       const res = await apiFetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ positionId, candidateId, mode, ttsProvider }),
+        body: JSON.stringify({ positionId, candidateId, mode, ttsProvider, language }),
       });
 
       if (!res.ok) {
@@ -154,34 +155,73 @@ export default function SetupForm({
             </button>
           </div>
           {mode === "voice" && (
-            <div className="mt-2 space-y-2">
-              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Voice Engine
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTtsProvider("kokoro")}
-                  className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
-                    ttsProvider === "kokoro"
-                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                      : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  }`}
-                >
-                  🎵 Kokoro
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTtsProvider("piper")}
-                  className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
-                    ttsProvider === "piper"
-                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                      : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  }`}
-                >
-                  🔊 Piper
-                </button>
+            <div className="mt-2 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                  Voice Engine
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTtsProvider("kokoro")}
+                    className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
+                      ttsProvider === "kokoro"
+                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                        : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    🎵 Kokoro
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTtsProvider("piper")}
+                    className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
+                      ttsProvider === "piper"
+                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                        : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    🔊 Piper
+                  </button>
+                </div>
               </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                  Interview Language
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLanguage("english");
+                      setTtsProvider("piper");
+                    }}
+                    className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
+                      language === "english"
+                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                        : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    🇺🇸 English
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLanguage("vietnamese");
+                      setTtsProvider("kokoro");
+                    }}
+                    className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
+                      language === "vietnamese"
+                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                        : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    🇻🇳 Vietnamese
+                  </button>
+                </div>
+              </div>
+
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 Requires audio.cpp (STT) and audio gateway (TTS) running locally.
               </p>

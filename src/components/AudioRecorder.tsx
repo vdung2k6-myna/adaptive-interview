@@ -4,6 +4,7 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 
 interface AudioRecorderProps {
   onRecordingComplete: (blob: Blob, durationMs: number) => void;
+  onUserGesture?: () => void;
   disabled?: boolean;
 }
 
@@ -87,7 +88,7 @@ function writeString(view: DataView, offset: number, string: string) {
   }
 }
 
-export default function AudioRecorder({ onRecordingComplete, disabled }: AudioRecorderProps) {
+export default function AudioRecorder({ onRecordingComplete, onUserGesture, disabled }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [durationMs, setDurationMs] = useState(0);
   const [waveform, setWaveform] = useState<number[]>(new Array(40).fill(0));
@@ -132,6 +133,7 @@ export default function AudioRecorder({ onRecordingComplete, disabled }: AudioRe
 
   const startRecording = async () => {
     if (disabled) return;
+    onUserGesture?.();
     setIsSubmitting(false);
     isSubmittingRef.current = false;
 
@@ -207,6 +209,7 @@ export default function AudioRecorder({ onRecordingComplete, disabled }: AudioRe
   };
 
   const stopRecording = () => {
+    onUserGesture?.();
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
       mediaRecorderRef.current.stop();
     }
@@ -298,6 +301,7 @@ export default function AudioRecorder({ onRecordingComplete, disabled }: AudioRe
                 <button
                   disabled={isSubmitting}
                   onClick={() => {
+                    onUserGesture?.();
                     if (isSubmittingRef.current) return;
                     isSubmittingRef.current = true;
                     setIsSubmitting(true);

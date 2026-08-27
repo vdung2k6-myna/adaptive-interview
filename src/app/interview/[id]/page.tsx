@@ -48,6 +48,7 @@ interface SessionData {
     id: string;
     status: string;
     mode: string;
+    language: "english" | "vietnamese";
     maxTurns: number;
     currentTurn: number;
   };
