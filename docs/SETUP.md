@@ -119,12 +119,37 @@ PORT=4000 node .next/standalone/server.js
 .next/standalone/
 ├── server.js          # Entry point — run this with Node
 ├── server.js.map
+├── public/            # Static PWA assets (icons, manifest, service worker)
 └── .next/
     ├── static/        # JS/CSS chunks copied by postbuild
     └── server/        # Server chunks
 ```
 
 You can copy just `.next/standalone/` to your production host — no `node_modules` required.
+
+### Progressive Web App (PWA) deployment
+
+The frontend is configured as a Progressive Web App. For the "Add to Home Screen" prompt to appear, the production host **must serve the site over HTTPS** with a valid certificate.
+
+PWA assets generated during the build:
+
+| Asset | Path | Purpose |
+|---|---|---|
+| Manifest | `/manifest.json` | Tells Chrome how to install the app |
+| Service Worker | `/sw.js` | Caches the shell; stamped per build to avoid stale caches |
+| Icons | `/icon-192.png`, `/icon-512.png`, `/icon-maskable.png` | Launcher and adaptive icons |
+| Apple Touch Icon | `/apple-touch-icon.png` | iOS home screen icon |
+| Offline fallback | `/offline.html` | Shown when the app is launched without connectivity |
+
+The `scripts/postbuild.mjs` step copies `public/` into `.next/standalone/public/` and stamps the service worker cache version with a build id. Do not disable this step for production builds.
+
+To regenerate the icon set from the source generator:
+
+```bash
+node scripts/generate-pwa-icons.mjs
+```
+
+> **Note:** PWA install prompts and service workers require a secure context (HTTPS or `localhost` for local development). HTTP-only production deployments will not show the install banner.
 
 ### Deploy with PM2
 

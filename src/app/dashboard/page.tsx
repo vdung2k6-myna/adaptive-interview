@@ -144,16 +144,16 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+    <div className="min-h-screen bg-zinc-50 p-4 dark:bg-zinc-950 md:p-6">
       <div className="mx-auto max-w-5xl">
-        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50 mb-6">Interview Dashboard</h1>
+        <h1 className="mb-6 text-xl font-semibold text-zinc-900 dark:text-zinc-50 sm:text-2xl">
+          Interview Dashboard
+        </h1>
 
-        {error && (
-          <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
-        )}
+        {error && <p className="mb-4 text-red-600 dark:text-red-400">{error}</p>}
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { label: "Total Sessions", value: stats.total },
             { label: "Active", value: stats.active },
@@ -171,11 +171,11 @@ export default function DashboardPage() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="min-h-[44px] rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           >
             <option value="">All Statuses</option>
             <option value="created">Created</option>
@@ -187,12 +187,12 @@ export default function DashboardPage() {
             placeholder="Search candidate or position..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="min-h-[44px] flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           />
         </div>
 
-        {/* Sessions Table */}
-        <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
+        {/* Desktop Table */}
+        <div className="hidden overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 md:block">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800">
               <tr>
@@ -232,9 +232,7 @@ export default function DashboardPage() {
                       {s.currentTurn}/{s.maxTurns}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="text-zinc-700 dark:text-zinc-300">
-                        {s.evaluation?.overallScore ?? "—"}
-                      </div>
+                      <div className="text-zinc-700 dark:text-zinc-300">{s.evaluation?.overallScore ?? "—"}</div>
                       {s.evaluation?.humanCalibrated && (
                         <div className="text-xs text-emerald-600 dark:text-emerald-400">
                           Human: {s.evaluation.humanOverallScore ?? "—"}
@@ -250,24 +248,24 @@ export default function DashboardPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-3">
+                      <div className="flex flex-wrap items-center justify-end gap-3">
                         <button
                           onClick={() => copyInterviewLink(s.id)}
-                          className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline"
+                          className="inline-flex min-h-[44px] items-center px-2 text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
                         >
                           {copiedId === s.id ? "Copied!" : "Copy Link"}
                         </button>
                         {s.mode === "voice" && s.status !== "completed" && (
                           <Link
                             href={`/interview/${s.id}/voice`}
-                            className="text-sm text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-200 underline"
+                            className="inline-flex min-h-[44px] items-center px-2 text-sm text-purple-600 underline hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-200"
                           >
                             Join Voice
                           </Link>
                         )}
                         <Link
                           href={`/interview/${s.id}/transcript`}
-                          className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline"
+                          className="inline-flex min-h-[44px] items-center px-2 text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
                         >
                           View
                         </Link>
@@ -278,6 +276,82 @@ export default function DashboardPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Cards */}
+        <div className="space-y-3 md:hidden">
+          {filteredSessions.length === 0 ? (
+            <p className="text-center text-zinc-500 dark:text-zinc-400">No sessions found.</p>
+          ) : (
+            filteredSessions.map((s) => (
+              <div
+                key={s.id}
+                className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+              >
+                <div className="mb-3 flex items-start justify-between">
+                  <div>
+                    <div className="font-medium text-zinc-900 dark:text-zinc-50">
+                      {s.candidate?.name || "Unknown"}
+                    </div>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">{s.candidate?.email}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {statusBadge(s.status)}
+                    {modeBadge(s.mode)}
+                  </div>
+                </div>
+
+                <div className="mb-3 text-sm text-zinc-700 dark:text-zinc-300">
+                  {s.position?.title || "Unknown"} — {s.position?.level}
+                </div>
+
+                <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+                  <div className="text-zinc-700 dark:text-zinc-300">
+                    Turn {s.currentTurn}/{s.maxTurns}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-500 dark:text-zinc-400">Score:</span>
+                    <span className="font-medium text-zinc-900 dark:text-zinc-50">{s.evaluation?.overallScore ?? "—"}</span>
+                  </div>
+                  {s.evaluation?.humanCalibrated && (
+                    <div className="text-xs text-emerald-600 dark:text-emerald-400">
+                      Human: {s.evaluation.humanOverallScore ?? "—"}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  {recommendationBadge(s.evaluation?.recommendation || null)}
+                  {s.evaluation?.humanCalibrated && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400">✓</span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                  <button
+                    onClick={() => copyInterviewLink(s.id)}
+                    className="inline-flex min-h-[44px] items-center text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                  >
+                    {copiedId === s.id ? "Copied!" : "Copy Link"}
+                  </button>
+                  {s.mode === "voice" && s.status !== "completed" && (
+                    <Link
+                      href={`/interview/${s.id}/voice`}
+                      className="inline-flex min-h-[44px] items-center text-sm text-purple-600 underline hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-200"
+                    >
+                      Join Voice
+                    </Link>
+                  )}
+                  <Link
+                    href={`/interview/${s.id}/transcript`}
+                    className="inline-flex min-h-[44px] items-center text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                  >
+                    View
+                  </Link>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

@@ -39,7 +39,7 @@ export const ScoreInput = React.memo(function ScoreInput({
             onClick={() => handleClick(n)}
             onMouseEnter={() => setHovered(n)}
             onMouseLeave={() => setHovered(0)}
-            className={`text-lg transition-colors ${
+            className={`flex h-10 w-10 items-center justify-center text-lg transition-colors sm:h-8 sm:w-8 ${
               n <= displayValue
                 ? "text-yellow-500"
                 : "text-zinc-300 dark:text-zinc-600"

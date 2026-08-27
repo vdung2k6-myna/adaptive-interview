@@ -2,6 +2,120 @@
 
 > **Path migration note:** During the 2026-08 backend extraction, files under `src/app/api/*`, `src/lib/db.ts`, `src/lib/schema.ts`, `src/lib/ollama.ts`, `src/lib/evaluation.ts`, `src/lib/prompts.ts`, `src/lib/embeddings.ts`, `src/lib/seed.ts`, `src/lib/mcp/*`, and most of `src/lib/audio/*` moved to the standalone [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api) repository (default branch `master`). Historical entries below still name their original monolith paths. Current frontend files live under `src/app/*`, `src/components/*`, `src/lib/api-client.ts`, `src/lib/config/*`, `src/lib/types.ts`, `src/lib/use-playback-rate.ts`, and `src/lib/audio/sentence-queue.ts`.
 
+## 2026-08-27
+
+### Add PWA Support for Android Installability
+
+**Change:** `add-pwa-android-installability` (OpenSpec)
+
+**Problem:** Candidates open anonymous interview links on Android phones, but the app runs only as a browser tab with no home-screen icon, no splash screen, and browser chrome competing for attention during voice interviews.
+
+**Solution:** Added Progressive Web App scaffolding so Chrome on Android can install the app and launch it in a standalone, chromeless window.
+
+**What changed:**
+- Assets:
+  - Created `public/manifest.json` with app metadata, theme colors, and icon set
+  - Generated `public/icon-192.png`, `public/icon-512.png`, `public/icon-maskable.png`, and `public/apple-touch-icon.png` via `scripts/generate-pwa-icons.mjs`
+  - Created `public/offline.html` and `src/app/offline/page.tsx` as offline fallback pages
+- Service worker:
+  - Created `public/sw.js` — precaches the shell, caches immutable `/_next/static/*` chunks, uses network-first for API/audio, and serves an offline fallback
+  - Registered the service worker from `src/app/layout.tsx` with a small client-side script
+  - `scripts/postbuild.mjs` now stamps the service worker cache version with a per-build id and copies `public/` into `.next/standalone/public/`
+- Layout:
+  - Updated `src/app/layout.tsx` with `theme-color`, `manifest`, and `apple-touch-icon` meta/link tags
+- Documentation:
+  - Updated `docs/SETUP.md` with PWA deployment and HTTPS requirements
+  - Updated `docs/ARCHITECTURE.md` with a PWA/service worker section
+  - Updated `docs/CHANGELOG.md`
+
+**Status:** Implemented and documented. Manual Android install/standalone/voice testing required for full validation.
+
+---
+
+## 2026-08-27
+
+### Make Web UI Mobile Adaptive
+
+**Change:** `adaptive-mobile-ui` (OpenSpec)
+
+**Problem:** Admin and interview pages were built for desktop widths. On phones the tables overflowed, form inputs triggered iOS auto-zoom, buttons were too small to tap reliably, and the navigation bar wrapped or clipped.
+
+**Solution:** Applied a mobile-first responsive pass across the frontend: collapsible navigation, table-to-card lists on narrow screens, larger touch targets, and `text-base` form controls to prevent zoom.
+
+**What changed:**
+- Navigation:
+  - Created `src/components/MobileNav.tsx` hamburger menu
+  - Updated `src/app/layout.tsx` to show `MobileNav` on small screens and keep desktop links on `md:` and up
+- Admin list pages:
+  - `src/app/dashboard/page.tsx` — mobile card list, responsive filters/stats
+  - `src/app/positions/page.tsx` — mobile cards with Edit/Delete touch targets
+  - `src/app/candidates/page.tsx` — mobile cards with skill/status chips
+  - `src/app/campaigns/page.tsx` — mobile cards with dates/sessions
+- Detail/comparison pages:
+  - `src/app/campaigns/[id]/page.tsx` — responsive metrics grid, card lists for top candidates and positions
+  - `src/app/compare/page.tsx` — horizontal scroll wrapper for the comparison table
+- Interview pages:
+  - `src/app/interview/[id]/page.tsx` — stacked header, `text-base` chat input to prevent iOS zoom
+  - `src/app/interview/[id]/voice/page.tsx` — stacked header, larger recorder/playback controls
+  - `src/app/interview/[id]/transcript/page.tsx` — larger Speak/Stop and calibration controls
+- Forms and setup:
+  - `src/app/setup/page.tsx` and `SetupForm.tsx` — responsive padding, `text-base` selects/buttons, larger mode/voice toggles
+  - `src/app/positions/new/PositionForm.tsx`, `src/app/candidates/new/CandidateForm.tsx`, `src/app/campaigns/new/CampaignForm.tsx`, plus edit wrappers — `text-base` inputs, `min-h-[44px]` buttons, larger tag/skill/requirement remove targets
+- Shared components:
+  - `src/components/DeleteButton.tsx` — `min-h-[44px]` touch target
+  - `src/components/ScoreInput.tsx` — larger star touch targets on mobile
+  - `src/components/VersionHistory.tsx` — larger delete button
+  - `src/components/AudioRecorder.tsx` — larger record/stop/submit/discard targets
+- Documentation:
+  - Updated `docs/COMPONENTS.md` with `MobileNav` and responsive notes
+  - Updated `docs/CHANGELOG.md`
+
+**Status:** Implemented and documented. Validation via `npm run build` / `npm run lint` and manual mobile viewport checks pending.
+
+---
+
+## 2026-08-27
+
+### Fix Audio Streaming Stop Regressions
+
+**Change:** `fix-audio-streaming-stop-regressions` (OpenSpec)
+
+**Problem:** Two audio regressions appeared in the TTS pipeline:
+1. Clicking **Speak** on a transcript message did not start audio when the first sentence was ready; playback appeared to wait until every chunk had been produced.
+2. Clicking **Stop** did not reliably stop playback. Audio from the current message continued, especially when the non-streaming fallback path was active.
+
+**Root Cause:**
+- The non-streaming fallback (`speakMessageFallback`) was not abortable, so a Stop click that arrived while the combined-audio fetch was in flight could not prevent the resulting `<audio>` element from playing.
+- The streaming path's catch handler unconditionally cleared the UI state, which could wipe a newer active Speak request when an older SSE reader finally aborted.
+- The voice interview page had no per-turn cancellation; a stale SSE reader from a previous turn could leak events into the new turn's sentence queue.
+- Backend SSE events were not explicitly flushed through any buffering middleware, so clients could receive batched events late.
+
+**Solution:**
+- Made `speakMessageFallback` accept a shared `AbortSignal` and generation counter; it bails out before decoding or playing if Stop/supersession occurred.
+- Guarded all transcript streaming cleanup/fallback transitions with the generation counter so only the active Speak generation mutates UI state.
+- Added `turnGenerationRef` and `turnAbortRef` to the voice interview page; each new recording aborts the previous SSE reader and ignores stale events.
+- Added `res.flush?.()` to the backend SSE helper so events are pushed immediately.
+
+**What changed:**
+- `src/app/interview/[id]/transcript/page.tsx`:
+  - `speakMessageFallback` now takes `signal` and `myGen` and checks them before every async boundary and before playback.
+  - `speakMessageStream` passes its `AbortController` signal and generation to fallback.
+  - Catch block no longer clears UI state when the generation has changed.
+  - `done`/end-of-stream guards are generation-aware.
+- `src/app/interview/[id]/voice/page.tsx`:
+  - Added `turnGenerationRef` and `turnAbortRef`.
+  - New recording increments generation, aborts previous SSE reader, and passes an `AbortSignal` to `apiFetch`.
+  - SSE loop, `candidate`, `sentence`, `done`, and `error` handlers all guard against stale generations.
+- `adaptive-interview-api/src/routes/voice.ts`:
+  - `sendSseEvent` now calls `res.flush?.()` after writing each event.
+- Documentation:
+  - Updated `docs/CHANGELOG.md` (this entry)
+  - Updated `docs/ARCHITECTURE.md` audio flow notes
+
+**Status:** Implemented and documented. Manual Speak/Stop and voice-turn validation pending.
+
+---
+
 ## 2026-08-24
 
 ### Fix Transcript Speak Stopping After First Sentence

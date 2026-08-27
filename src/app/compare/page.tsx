@@ -138,7 +138,7 @@ function CompareContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
         <p className="text-zinc-600 dark:text-zinc-400">Loading comparison...</p>
       </div>
     );
@@ -146,10 +146,13 @@ function CompareContent() {
 
   if (sessionIds.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
         <div className="text-center">
-          <p className="text-zinc-600 dark:text-zinc-400 mb-4">Select two sessions to compare.</p>
-          <Link href="/dashboard" className="text-zinc-900 dark:text-zinc-50 underline">
+          <p className="mb-4 text-zinc-600 dark:text-zinc-400">Select two sessions to compare.</p>
+          <Link
+            href="/dashboard"
+            className="min-h-[44px] text-zinc-900 underline dark:text-zinc-50"
+          >
             Go to Dashboard
           </Link>
         </div>
@@ -158,26 +161,32 @@ function CompareContent() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+    <div className="min-h-screen bg-zinc-50 p-4 dark:bg-zinc-950 md:p-6">
       <div className="mx-auto max-w-5xl">
-        <Link href="/dashboard" className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 mb-4 inline-block">
+        <Link
+          href="/dashboard"
+          className="mb-4 inline-block min-h-[44px] text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+        >
           ← Back to Dashboard
         </Link>
 
-        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50 mb-6">Candidate Comparison</h1>
+        <h1 className="mb-6 text-xl font-semibold text-zinc-900 dark:text-zinc-50 sm:text-2xl">
+          Candidate Comparison
+        </h1>
 
-        {error && (
-          <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
-        )}
+        {error && <p className="mb-4 text-red-600 dark:text-red-400">{error}</p>}
 
         {sessions.length >= 2 && (
-          <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+            <table className="w-full min-w-[36rem] text-sm">
               <thead className="bg-zinc-50 dark:bg-zinc-800">
                 <tr>
                   <th className="px-4 py-3 text-left font-medium text-zinc-700 dark:text-zinc-300">Metric</th>
                   {sessions.map((s) => (
-                    <th key={s.session.id} className="px-4 py-3 text-left font-medium text-zinc-700 dark:text-zinc-300">
+                    <th
+                      key={s.session.id}
+                      className="px-4 py-3 text-left font-medium text-zinc-700 dark:text-zinc-300"
+                    >
                       <div>{s.candidate?.name || "Unknown"}</div>
                       <div className="text-xs text-zinc-500 dark:text-zinc-400">{s.candidate?.email}</div>
                     </th>
@@ -254,7 +263,7 @@ function CompareContent() {
                     <td key={s.session.id} className="px-4 py-3">
                       <Link
                         href={`/interview/${s.session.id}/transcript`}
-                        className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline"
+                        className="min-h-[44px] px-2 text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
                       >
                         View Transcript
                       </Link>
@@ -272,11 +281,13 @@ function CompareContent() {
 
 export default function ComparePage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
-        <p className="text-zinc-600 dark:text-zinc-400">Loading comparison...</p>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
+          <p className="text-zinc-600 dark:text-zinc-400">Loading comparison...</p>
+        </div>
+      }
+    >
       <CompareContent />
     </Suspense>
   );

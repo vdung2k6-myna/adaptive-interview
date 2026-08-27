@@ -36,7 +36,7 @@ export const VersionHistory = React.memo(function VersionHistory({
           return (
             <li
               key={v.id}
-              className={`flex items-center justify-between text-sm rounded-lg px-2 py-1 ${
+              className={`flex min-h-[44px] items-center justify-between rounded-lg px-2 text-sm ${
                 isCurrent
                   ? "bg-zinc-100 dark:bg-zinc-800"
                   : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
@@ -45,11 +45,11 @@ export const VersionHistory = React.memo(function VersionHistory({
               <button
                 type="button"
                 onClick={() => onSelect?.(v.id)}
-                className="flex-1 flex items-center gap-2 text-left"
+                className="flex flex-1 items-center gap-2 text-left"
                 disabled={!onSelect}
               >
                 <ModelBadge model={v.model} />
-                <span className="text-zinc-500 dark:text-zinc-400 text-xs">
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
                   {new Date(v.createdAt).toLocaleDateString()}
                 </span>
                 {v.humanCalibrated && (
@@ -67,7 +67,7 @@ export const VersionHistory = React.memo(function VersionHistory({
                 <button
                   type="button"
                   onClick={() => onDelete(v.id)}
-                  className="text-xs text-zinc-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-400"
+                  className="flex h-10 w-10 items-center justify-center text-lg text-zinc-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-400"
                   title="Delete this version"
                 >
                   ×

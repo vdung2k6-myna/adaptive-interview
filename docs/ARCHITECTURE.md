@@ -204,7 +204,7 @@ src/
 │   ├── setup/                    # Interview setup (Client Component, apiFetch)
 │   ├── error.tsx                 # Global error boundary
 │   ├── globals.css               # Global styles + Markdown theme
-│   ├── layout.tsx                # Root layout with nav + fonts
+│   ├── layout.tsx                # Root layout with nav + fonts + PWA registration
 │   └── page.tsx                  # Landing → redirect to dashboard
 ├── components/                   # Shared React components
 │   ├── DeleteButton.tsx          # Client delete button with confirmation
@@ -214,7 +214,8 @@ src/
 │   ├── StreamingAudioQueue.tsx   # Sentence-level audio queue
 │   ├── ScoreInput.tsx            # Star score input
 │   ├── ModelBadge.tsx            # Model name badge
-│   └── VersionHistory.tsx        # Evaluation version list
+│   ├── VersionHistory.tsx        # Evaluation version list
+│   └── MobileNav.tsx             # Small-screen hamburger navigation
 └── lib/                          # Frontend utilities only
     ├── api-client.ts             # Browser fetch wrapper with Bearer token injection
     ├── config/                   # Frontend environment-specific config
@@ -376,6 +377,60 @@ Before any TTS call, text passes through the backend's text-processing module:
 - Audio files stored on local filesystem (`/tmp/audio/{sessionId}/`) by the backend
 - Messages table has audio metadata columns (`audioUrl`, `audioFormat`, `audioDurationSeconds`, `sttConfidence`)
 - First question uses dedicated `POST /api/voice/start` endpoint
+
+### Audio Playback Cancellation
+
+Both the transcript page and the voice interview page use a **generation-counter + AbortController** pattern so that Stop actions and new turns reliably cancel every in-flight audio operation.
+
+**Transcript page (`src/app/interview/[id]/transcript/page.tsx`)**
+- A monotonic `speakGenerationRef` is incremented on every **Speak** and **Stop** click.
+- A shared `AbortController` (`speakAbortRef`) is created at the start of a streaming Speak request and is also passed to the non-streaming fallback path.
+- `SentenceAudioQueue.stop()` cancels the current source, clears pending timers, and drops queued items.
+- The fallback path checks the generation and `signal.aborted` before decoding or playing; if Stop happened while the combined-audio fetch was in flight, playback never starts.
+- Stale SSE readers (from a superseded message or an old Stop) detect the generation mismatch and return without mutating UI state.
+
+**Voice interview page (`src/app/interview/[id]/voice/page.tsx`)**
+- A per-turn `turnGenerationRef` is incremented every time the candidate finishes a recording.
+- `turnAbortRef` holds the current turn's `AbortController`; the previous controller is aborted when a new turn starts.
+- The SSE reader and every event handler (`candidate`, `sentence`, `done`, `error`) check the turn generation and drop stale events.
+- `reader.cancel()` is called when a generation change is detected inside the read loop, releasing the stream promptly.
+
+**Backend (`adaptive-interview-api/src/routes/voice.ts`)**
+- `sendSseEvent()` writes each SSE event and then calls `res.flush?.()` so that buffering middleware (e.g., compression) pushes the event to the client immediately rather than batching events until the response ends.
+- Existing `AbortController` / socket-close handling cleans up in-flight TTS when the client disconnects.
+
+## PWA / Service Worker Architecture
+
+The frontend is packaged as a Progressive Web App so Android users can install it from Chrome and launch it in a standalone window.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     BROWSER / ANDROID                       │
+│  ┌─────────────┐  ┌─────────────────┐  ┌─────────────────┐   │
+│  │  manifest   │  │  service worker │  │  offline.html   │   │
+│  │  .json      │  │  sw.js          │  │                 │   │
+│  └──────┬──────┘  └────────┬────────┘  └─────────────────┘   │
+│         │                   │                                │
+│         ▼                   ▼                                │
+│  App metadata +       Precache shell,                        │
+│  launcher icons       network-first for API/audio            │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+              Next.js frontend (pages + components)
+                              │
+                              ▼
+              Express backend (adaptive-interview-api)
+```
+
+**Key points:**
+
+- `public/manifest.json` declares `display: standalone`, icons, theme colors, and start URL.
+- `public/sw.js` is registered by a small script in `src/app/layout.tsx`. It precaches the root shell, `offline.html`, and `manifest.json`, then uses a network-first strategy for API and audio requests. Immutable Next.js static chunks (`/_next/static/*`) are cached long-term.
+- The service worker cache name includes a build id that `scripts/postbuild.mjs` stamps after each build. Old caches are deleted on activation, preventing stale shells across deployments.
+- `public/offline.html` is served when the user launches the PWA without connectivity.
+- PWA assets live in `public/` and are copied into `.next/standalone/public/` by `scripts/postbuild.mjs`.
+- HTTPS is required in production for the install prompt; local development over `localhost` still allows service worker registration.
 
 ## Important Conventions
 

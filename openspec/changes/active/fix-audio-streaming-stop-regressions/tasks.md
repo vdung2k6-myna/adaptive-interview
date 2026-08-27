@@ -1,0 +1,22 @@
+# Tasks: Fix Audio Streaming Stop Regressions
+
+- [x] 1. Add per-turn generation/abort to transcript page fallback and streaming paths
+  - [x] 1.1 Make `speakMessageFallback` accept `signal` and `myGen`; abort playback if stale
+  - [x] 1.2 Update `speakMessageStream` to pass `signal`/`myGen` to fallback and guard the fallback call
+  - [x] 1.3 Fix stale-stream catch block so it does not clear UI state for a newer message
+  - [x] 1.4 Ensure `stopSpeaking()` aborts both stream and fallback
+- [x] 2. Add per-turn SSE abort to voice interview page
+  - [x] 2.1 Add `turnGenerationRef` and `turnAbortRef`
+  - [x] 2.2 Increment generation and cancel previous reader at the start of `handleRecordingComplete`
+  - [x] 2.3 Guard SSE loop and chunk enqueue with generation check
+- [x] 3. Verify backend `/api/voice/speak-stream` disconnect cleanup (no-op if already correct)
+  - [x] 3.1 Added `res.flush?.()` to SSE helper so events reach the client immediately
+- [x] 4. Update documentation
+  - [x] 4.1 `docs/CHANGELOG.md` entry
+  - [x] 4.2 `docs/ARCHITECTURE.md` audio-flow notes
+- [ ] 5. Build, lint, and manual validation
+  - [x] 5.1 `npm run build` passes (frontend)
+  - [x] 5.2 `npm run build` passes (backend)
+  - [x] 5.3 `npm run lint` passes (only pre-existing issues)
+  - [ ] 5.4 Manual transcript Speak/Stop tests
+  - [ ] 5.5 Manual voice interview turn-switching tests

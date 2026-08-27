@@ -96,7 +96,7 @@ export default function CandidateForm({ initialData }: CandidateFormProps) {
   }
 
   return (
-    <div className="max-w-lg mx-auto mt-12 p-6 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="max-w-lg mx-auto mt-6 md:mt-12 p-4 md:p-6 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <h1 className="text-2xl font-semibold mb-6 text-zinc-900 dark:text-zinc-50">
         {isEditing ? "Edit Candidate" : "New Candidate"}
       </h1>
@@ -111,7 +111,7 @@ export default function CandidateForm({ initialData }: CandidateFormProps) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Jane Doe"
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base min-h-[44px] text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           />
         </div>
 
@@ -124,7 +124,7 @@ export default function CandidateForm({ initialData }: CandidateFormProps) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="jane@example.com"
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base min-h-[44px] text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           />
         </div>
 
@@ -138,7 +138,7 @@ export default function CandidateForm({ initialData }: CandidateFormProps) {
             value={experienceYears}
             onChange={(e) => setExperienceYears(e.target.value)}
             placeholder="5"
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base min-h-[44px] text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           />
         </div>
 
@@ -158,12 +158,12 @@ export default function CandidateForm({ initialData }: CandidateFormProps) {
                 }
               }}
               placeholder="e.g. React, Kubernetes, Python"
-              className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+              className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-base min-h-[44px] text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
             />
             <button
               type="button"
               onClick={() => addSkill()}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-700"
+              className="min-h-[44px] rounded-lg border border-zinc-300 px-3 py-2 text-base font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-700"
             >
               Add
             </button>
@@ -180,7 +180,7 @@ export default function CandidateForm({ initialData }: CandidateFormProps) {
                   <button
                     type="button"
                     onClick={() => removeSkill(i)}
-                    className="ml-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50"
+                    className="inline-flex h-10 w-10 sm:h-6 sm:w-6 flex-shrink-0 items-center justify-center rounded-full text-lg sm:text-sm text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-700 dark:hover:text-zinc-50"
                     aria-label={`Remove ${s}`}
                   >
                     ×
@@ -200,7 +200,7 @@ export default function CandidateForm({ initialData }: CandidateFormProps) {
             onChange={(e) => setCv(e.target.value)}
             placeholder="Paste the candidate's CV here..."
             rows={8}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50 resize-y"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50 resize-y"
           />
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             This will be used to personalize interview questions.
@@ -215,13 +215,13 @@ export default function CandidateForm({ initialData }: CandidateFormProps) {
           <button
             type="submit"
             disabled={loading}
-            className="flex-1 rounded-lg bg-zinc-900 px-4 py-2 text-white font-medium hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="flex-1 min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-base text-white font-medium hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             {loading ? "Saving..." : isEditing ? "Save Changes" : "Create Candidate"}
           </button>
           <a
             href={isEditing ? "/candidates" : "/setup"}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="min-h-[44px] inline-flex items-center justify-center rounded-lg border border-zinc-300 px-4 py-2 text-base font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
             Cancel
           </a>

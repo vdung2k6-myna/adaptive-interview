@@ -531,6 +531,7 @@ export default function TranscriptPage() {
                 // Stream has emitted all chunks. If the queue is already idle,
                 // tear down now; otherwise onFinished will do it after the last
                 // sentence finishes playing.
+                if (currentGen !== speakGenerationRef.current) break;
                 speakStreamDoneRef.current = true;
                 if (
                   sentenceQueueRef.current &&
@@ -559,6 +560,7 @@ export default function TranscriptPage() {
       // Guard: if TTS returned null for every chunk, the queue never started
       // and onFinished won't fire — clear the stuck "Stop" button state.
       if (
+        currentGen === speakGenerationRef.current &&
         speakingMsgId === msgId &&
         sentenceQueueRef.current &&
         sentenceQueueRef.current.getQueueLength() === 0 &&
@@ -568,10 +570,8 @@ export default function TranscriptPage() {
         setSpeakingMsgId(null);
       }
     } catch (err) {
-      // If this stream was superseded by a newer Speak or Stop, don't fall back
+      // A newer Speak or Stop already owns state; do not touch UI or fall back.
       if (currentGen !== speakGenerationRef.current) {
-        cleanupStreamState();
-        setSpeakingMsgId(null);
         return;
       }
       if (err instanceof Error && err.name === "AbortError") {
@@ -581,31 +581,44 @@ export default function TranscriptPage() {
       }
       console.error("[Transcript] Streaming speak failed, falling back:", err);
       cleanupStreamState();
-      await speakMessageFallback(text, msgId, engine, playbackRate);
+      await speakMessageFallback(text, msgId, engine, playbackRate, abortCtrl.signal, currentGen);
     }
   }
 
   async function speakMessageFallback(
     text: string,
     msgId: string,
-    engine?: string,
-    playbackRate = 1
+    engine: string | undefined,
+    playbackRate: number,
+    signal: AbortSignal,
+    myGen: number
   ) {
-    if (speakingMsgId) return;
-    setSpeakingMsgId(msgId);
+    // Bail out immediately if this generation was superseded by Stop or another message.
+    if (myGen !== speakGenerationRef.current || signal.aborted) {
+      return;
+    }
 
     try {
       const res = await apiFetch("/api/voice/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, engine }),
+        signal,
       });
+
+      if (signal.aborted || myGen !== speakGenerationRef.current) {
+        return;
+      }
 
       if (!res.ok) {
         throw new Error("TTS failed");
       }
 
       const blob = await res.blob();
+      if (signal.aborted || myGen !== speakGenerationRef.current) {
+        return;
+      }
+
       const url = URL.createObjectURL(blob);
       objectUrlsRef.current.push(url);
       const audio = new Audio(url);
@@ -614,21 +627,30 @@ export default function TranscriptPage() {
 
       audio.onended = () => {
         URL.revokeObjectURL(url);
-        currentAudioRef.current = null;
-        setSpeakingMsgId(null);
+        if (myGen === speakGenerationRef.current) {
+          currentAudioRef.current = null;
+          setSpeakingMsgId(null);
+        }
       };
 
       audio.onerror = () => {
         URL.revokeObjectURL(url);
-        currentAudioRef.current = null;
-        setSpeakingMsgId(null);
+        if (myGen === speakGenerationRef.current) {
+          currentAudioRef.current = null;
+          setSpeakingMsgId(null);
+        }
       };
 
       await audio.play();
     } catch (err) {
-      console.error("Speak error:", err);
-      currentAudioRef.current = null;
-      setSpeakingMsgId(null);
+      // A generation change or AbortError is expected after Stop — do not log as error.
+      if (myGen === speakGenerationRef.current && !(err instanceof Error && err.name === "AbortError")) {
+        console.error("Speak fallback error:", err);
+      }
+      if (myGen === speakGenerationRef.current) {
+        currentAudioRef.current = null;
+        setSpeakingMsgId(null);
+      }
     }
   }
 
@@ -730,7 +752,7 @@ export default function TranscriptPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
         <p className="text-zinc-600 dark:text-zinc-400">Loading transcript...</p>
       </div>
     );
@@ -738,7 +760,7 @@ export default function TranscriptPage() {
 
   if (!sessionData) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
         <p className="text-red-600 dark:text-red-400">Session not found.</p>
       </div>
     );
@@ -747,18 +769,18 @@ export default function TranscriptPage() {
   const { session, candidate, position, messages } = sessionData;
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+    <div className="min-h-screen bg-zinc-50 p-4 dark:bg-zinc-950 md:p-6">
       <div className="mx-auto max-w-5xl">
         <Link
           href="/dashboard"
-          className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 mb-4 inline-block"
+          className="mb-4 inline-block min-h-[44px] text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
         >
           ← Back to Dashboard
         </Link>
 
-        <div className="mb-6 flex items-start justify-between">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+            <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50 sm:text-2xl">
               {candidate?.name || "Unknown Candidate"} — {position?.title || "Interview"}
             </h1>
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -769,13 +791,13 @@ export default function TranscriptPage() {
           </div>
           <button
             onClick={copyInterviewLink}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="min-h-[44px] rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
             {copied ? "✓ Link Copied" : "Copy Interview Link"}
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Transcript */}
           <div className="lg:col-span-2 space-y-4">
             <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
@@ -798,7 +820,7 @@ export default function TranscriptPage() {
                             }
                             aria-label="Playback speed"
                             title="Playback speed"
-                            className="rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-600 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
+                            className="min-h-[44px] rounded border border-zinc-300 bg-white px-2 py-1 text-base text-zinc-600 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
                           >
                             <option value={0.5}>0.5x</option>
                             <option value={0.75}>0.75x</option>
@@ -819,10 +841,10 @@ export default function TranscriptPage() {
                                   )
                             }
                             disabled={speakingMsgId !== null && speakingMsgId !== msg.id}
-                            className={`text-xs rounded px-2 py-0.5 border transition-colors ${
+                            className={`min-h-[44px] rounded px-3 py-2 text-sm leading-none border transition-colors ${
                               speakingMsgId === msg.id
-                                ? "border-red-200 text-red-600 hover:text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:text-red-200 dark:hover:bg-red-900/20"
-                                : "border-zinc-200 text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800"
+                                ? "border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-200"
+                                : "border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                             } disabled:opacity-40`}
                             title={speakingMsgId === msg.id ? "Stop" : "Speak"}
                           >
@@ -904,7 +926,7 @@ export default function TranscriptPage() {
                     <select
                       value={selectedModel}
                       onChange={(e) => setSelectedModel(e.target.value)}
-                      className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                      className="w-full min-h-[44px] rounded-lg border border-zinc-300 px-3 py-2 text-base dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                     >
                       {AVAILABLE_MODELS.map((m) => (
                         <option key={m.value} value={m.value}>
@@ -915,7 +937,7 @@ export default function TranscriptPage() {
                     <button
                       onClick={startEvaluationJob}
                       disabled={evalJob.phase === "posting" || evalJob.phase === "polling"}
-                      className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                      className="w-full min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-base font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
                     >
                       {evalJob.phase === "posting"
                         ? "Starting..."
@@ -1060,7 +1082,7 @@ export default function TranscriptPage() {
                           onChange={(e) =>
                             setHumanRecommendation(e.target.value || null)
                           }
-                          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                          className="w-full min-h-[44px] rounded-lg border border-zinc-300 px-3 py-2 text-base dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                         >
                           {RECOMMENDATION_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>
@@ -1083,12 +1105,12 @@ export default function TranscriptPage() {
                         onChange={(e) => setNotes(e.target.value)}
                         placeholder="Add your own observations..."
                         rows={3}
-                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                       />
                       <button
                         onClick={saveCalibration}
                         disabled={savingCalibration || !hasCalibrationChanges()}
-                        className="mt-2 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                        className="mt-2 min-h-[44px] rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
                       >
                         {savingCalibration ? "Saving..." : "Save Calibration & Notes"}
                       </button>
@@ -1123,7 +1145,7 @@ export default function TranscriptPage() {
                         <select
                           value={selectedModel}
                           onChange={(e) => setSelectedModel(e.target.value)}
-                          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                          className="w-full min-h-[44px] rounded-lg border border-zinc-300 px-3 py-2 text-base dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                         >
                           {AVAILABLE_MODELS.map((m) => (
                             <option key={m.value} value={m.value}>
@@ -1134,7 +1156,7 @@ export default function TranscriptPage() {
                         <button
                           onClick={startEvaluationJob}
                           disabled={evalJob.phase === "posting" || evalJob.phase === "polling"}
-                          className="w-full rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                          className="w-full min-h-[44px] rounded-lg border border-zinc-300 px-4 py-2 text-base font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
                         >
                           {evalJob.phase === "posting"
                             ? "Generating..."

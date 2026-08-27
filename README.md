@@ -25,6 +25,8 @@ This repository contains the **Next.js frontend**. The API backend lives in the 
 - **Position & Candidate Management** — Create, list, edit, and delete positions and candidates (edit/delete blocked if the entity is already in use by a session)
 - **Recruiting Campaigns** — Group positions into campaigns with aggregated metrics: sessions, completion rate, score averages, recommendation distribution, and top candidates
 - **Voice Interviews** — Optional turn-based voice mode: candidates record answers via microphone; the backend transcribes via audio.cpp (STT) and speaks back via TTS. Supports **Kokoro** (default) and **Piper**
+- **Mobile-First Responsive UI** — All admin, setup, and interview pages adapt down to 375px wide. Tables become card lists on phones, touch targets are ≥44×44px, and form inputs use `text-base` to prevent iOS Safari auto-zoom
+- **PWA Installability (Android)** — Add-to-home-screen support with a Web App Manifest, service worker, offline fallback, and standalone display mode for chromeless voice interviews
 - **MCP Analytics Server** — External AI clients can query anonymized interview data via MCP protocol. Implemented in the backend at `/api/mcp`
 
 ---
@@ -87,7 +89,7 @@ src/
 │   ├── setup/                    # Interview setup (Client Component)
 │   ├── error.tsx                 # Global error boundary
 │   ├── globals.css               # Tailwind + Markdown + syntax styles
-│   ├── layout.tsx                # Root layout with nav + fonts
+│   ├── layout.tsx                # Root layout with nav + fonts + PWA registration
 │   └── page.tsx                  # Landing → redirect to /dashboard
 ├── components/                   # Shared React components
 │   ├── MarkdownRenderer.tsx      # Rich Markdown with syntax highlighting
@@ -97,7 +99,8 @@ src/
 │   ├── ScoreInput.tsx            # Star score input
 │   ├── ModelBadge.tsx            # Model name badge
 │   ├── VersionHistory.tsx        # Evaluation version list
-│   └── DeleteButton.tsx          # Confirmation delete button
+│   ├── DeleteButton.tsx          # Confirmation delete button
+│   └── MobileNav.tsx             # Small-screen hamburger navigation
 └── lib/                          # Frontend utilities only
     ├── api-client.ts             # Browser fetch wrapper with Bearer token injection
     ├── config/                   # Frontend environment config

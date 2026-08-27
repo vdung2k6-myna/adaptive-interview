@@ -84,7 +84,7 @@ export default function CampaignForm({ positions }: CampaignFormProps) {
   }
 
   return (
-    <div className="max-w-lg mx-auto mt-12 p-6 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="max-w-lg mx-auto mt-6 md:mt-12 p-4 md:p-6 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <h1 className="text-2xl font-semibold mb-6 text-zinc-900 dark:text-zinc-50">
         New Campaign
       </h1>
@@ -99,7 +99,7 @@ export default function CampaignForm({ positions }: CampaignFormProps) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Q3 2026 Engineering Hiring"
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base min-h-[44px] text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           />
         </div>
 
@@ -112,11 +112,11 @@ export default function CampaignForm({ positions }: CampaignFormProps) {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Optional description"
             rows={3}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
               Start Date
@@ -125,7 +125,7 @@ export default function CampaignForm({ positions }: CampaignFormProps) {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base min-h-[44px] text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
             />
           </div>
           <div>
@@ -136,7 +136,7 @@ export default function CampaignForm({ positions }: CampaignFormProps) {
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base min-h-[44px] text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
             />
           </div>
         </div>
@@ -157,12 +157,12 @@ export default function CampaignForm({ positions }: CampaignFormProps) {
                 }
               }}
               placeholder="e.g. urgent, remote"
-              className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+              className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-base min-h-[44px] text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
             />
             <button
               type="button"
               onClick={() => addTag()}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-700"
+              className="min-h-[44px] rounded-lg border border-zinc-300 px-3 py-2 text-base font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-700"
             >
               Add
             </button>
@@ -179,7 +179,7 @@ export default function CampaignForm({ positions }: CampaignFormProps) {
                   <button
                     type="button"
                     onClick={() => removeTag(i)}
-                    className="ml-1 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50"
+                    className="inline-flex h-10 w-10 sm:h-6 sm:w-6 flex-shrink-0 items-center justify-center rounded-full text-lg sm:text-sm text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-700 dark:hover:text-zinc-50"
                     aria-label={`Remove ${t}`}
                   >
                     ×
@@ -206,15 +206,15 @@ export default function CampaignForm({ positions }: CampaignFormProps) {
               {positions.map((p) => (
                 <label
                   key={p.id}
-                  className="flex items-center gap-3 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                  className="flex items-center gap-3 min-h-[44px] px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
                 >
                   <input
                     type="checkbox"
                     checked={selectedPositions.includes(p.id)}
                     onChange={() => togglePosition(p.id)}
-                    className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-700"
+                    className="h-5 w-5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-700"
                   />
-                  <span className="text-sm text-zinc-900 dark:text-zinc-50">{p.title}</span>
+                  <span className="text-base text-zinc-900 dark:text-zinc-50">{p.title}</span>
                 </label>
               ))}
             </div>
@@ -229,13 +229,13 @@ export default function CampaignForm({ positions }: CampaignFormProps) {
           <button
             type="submit"
             disabled={loading}
-            className="flex-1 rounded-lg bg-zinc-900 px-4 py-2 text-white font-medium hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="flex-1 min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-base text-white font-medium hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             {loading ? "Creating..." : "Create Campaign"}
           </button>
           <Link
             href="/campaigns"
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="min-h-[44px] inline-flex items-center justify-center rounded-lg border border-zinc-300 px-4 py-2 text-base font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
             Cancel
           </Link>

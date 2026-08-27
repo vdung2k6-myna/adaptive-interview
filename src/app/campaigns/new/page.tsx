@@ -25,7 +25,7 @@ export default function NewCampaignPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen p-8 bg-zinc-50 dark:bg-zinc-950">
+      <div className="min-h-screen p-4 md:p-8 bg-zinc-50 dark:bg-zinc-950">
         <p className="text-zinc-500 dark:text-zinc-400">Loading positions...</p>
       </div>
     );
@@ -33,14 +33,14 @@ export default function NewCampaignPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen p-8 bg-zinc-50 dark:bg-zinc-950">
+      <div className="min-h-screen p-4 md:p-8 bg-zinc-50 dark:bg-zinc-950">
         <p className="text-red-600 dark:text-red-400">{error}</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen p-8 bg-zinc-50 dark:bg-zinc-950">
+    <div className="min-h-screen p-4 md:p-8 bg-zinc-50 dark:bg-zinc-950">
       <CampaignForm positions={positions} />
     </div>
   );

@@ -38,7 +38,7 @@ export default function SetupPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen p-8 bg-zinc-50 dark:bg-zinc-950">
+      <div className="min-h-screen p-4 md:p-8 bg-zinc-50 dark:bg-zinc-950">
         <p className="text-zinc-500 dark:text-zinc-400">Loading setup data...</p>
       </div>
     );
@@ -46,7 +46,7 @@ export default function SetupPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen p-8 bg-zinc-50 dark:bg-zinc-950">
+      <div className="min-h-screen p-4 md:p-8 bg-zinc-50 dark:bg-zinc-950">
         <p className="text-red-600 dark:text-red-400">{error}</p>
       </div>
     );
@@ -67,7 +67,7 @@ export default function SetupPage() {
   }
 
   return (
-    <div className="min-h-screen p-8 bg-zinc-50 dark:bg-zinc-950">
+    <div className="min-h-screen p-4 md:p-8 bg-zinc-50 dark:bg-zinc-950">
       <SetupForm
         positions={positions}
         candidates={candidates}

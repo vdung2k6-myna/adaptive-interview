@@ -60,6 +60,7 @@ Interactive star-based score input for human calibration.
 - Click the same star again to clear
 - Hover preview before clicking
 - Yellow filled stars for selected, gray for empty
+- Star touch targets are `h-10 w-10` on mobile and `sm:h-8 sm:w-8` on larger screens
 
 ---
 
@@ -123,6 +124,34 @@ Client component for deleting positions or candidates with confirmation.
 - Calls `DELETE /api/{type}s/{id}` via `apiFetch()` (injects Bearer token when auth is enabled)
 - Refreshes the page via `router.refresh()` on success
 - Shows alert on error
+- Button touch target is `min-h-[44px] px-2` for mobile ease of use
+
+---
+
+### `MobileNav`
+
+**Location:** `src/components/MobileNav.tsx`
+
+**Type:** Client component ("use client")
+
+**Responsibilities:**
+- Render a hamburger button on small screens (`md:hidden`)
+- Toggle a full-width dropdown menu with the same links as the desktop nav
+- Close the menu when a link is clicked
+
+**Features:**
+- `aria-expanded` and `aria-controls` for accessibility
+- `X` close icon when open, `☰` hamburger icon when closed
+- Backdrop click / Escape handling is handled via internal state and click-outside behavior via the header layout
+
+**Usage:**
+
+```tsx
+import { MobileNav } from "@/components/MobileNav";
+
+// Inside layout header
+<MobileNav />
+```
 
 ---
 
@@ -269,6 +298,11 @@ consumeStream():
 - Only the streaming message re-renders; completed messages are skipped
 - State updates batched to ~20/sec instead of ~100/sec
 
+**Mobile:**
+- Header stacks vertically on small screens (`flex-col sm:flex-row`)
+- Chat input uses `text-base` and `min-h-[44px]` to prevent iOS Safari auto-zoom
+- Send button is `text-base` / `min-h-[44px]` for easy touch interaction
+
 ---
 
 ### `VoiceInterviewPage` (`interview/[id]/voice/page.tsx`)
@@ -332,6 +366,13 @@ Same as before — `POST /api/voice/turn` returns full JSON response.
 **Streaming Toggle:**
 A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mode. If SSE fails mid-stream, the UI automatically falls back to `POST /api/voice/turn` with a "Streaming unavailable" banner.
 
+**Mobile:**
+- Header stacks vertically on small screens
+- Recorder idle target shows "Tap to start recording" with larger text
+- Stop / Submit Answer / Discard buttons are `text-base` / `min-h-[44px]` and wrap with `flex-wrap`
+- Playback speed selector uses `text-base` / `min-h-[44px]`
+- "Start Interview" and "View Transcript" buttons are enlarged for touch
+
 ---
 
 ### `MessageBubble` (inline in `interview/[id]/page.tsx`)
@@ -371,6 +412,12 @@ A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mo
 - **Left (2/3):** Interview transcript with rich Markdown rendering
 - **Right (1/3):** AI Evaluation panel with calibration controls
 
+**Mobile:**
+- Page padding reduced to `p-4 md:p-6`
+- Header/title section stacks vertically
+- Playback speed selector, Speak/Stop, and model/re-evaluation controls use `text-base` / `min-h-[44px]` touch targets
+- Score star buttons are larger on small screens (`h-10 w-10`)
+
 ---
 
 ### `DashboardPage` (`dashboard/page.tsx`)
@@ -388,6 +435,7 @@ A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mo
 - AI recommendation badges with calibration indicator (✓)
 - Score display: AI overall average + human average if calibrated
 - Search and filter controls
+- **Mobile:** hides the desktop table below `md` and renders stacked session cards; filters and stats become a responsive card grid
 
 ---
 
@@ -403,6 +451,7 @@ A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mo
 - AI star ratings for each dimension
 - AI recommendation badges with calibration indicator
 - Confidence comparison
+- **Mobile:** the comparison table is wrapped in `overflow-x-auto` with `min-w-[36rem]` so users can scroll horizontally without page overflow
 
 ---
 
@@ -415,6 +464,11 @@ A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mo
 - Dropdown selection for position + candidate
 - Create interview session on submit via `apiFetch()`
 - Redirect to `/interview/{id}`
+
+**Mobile:**
+- Parent page padding is `p-4 md:p-8`
+- Form card padding is `p-4 md:p-6` with reduced top margin on small screens
+- Selects, mode/voice engine toggles, submit button, and URL copy controls use `text-base` / `min-h-[44px]`
 
 ### `PositionForm` (`positions/new/PositionForm.tsx`)
 
@@ -431,6 +485,12 @@ A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mo
 | Prop | Type | Description |
 |------|------|-------------|
 | `initialData` | `{id, title, level, jobDescription, requirements}` | Optional. When provided, form enters edit mode |
+
+**Mobile:**
+- Wrapper padding `p-4 md:p-8`; form card padding `p-4 md:p-6`
+- All inputs, selects, and the Add requirement button use `text-base` / `min-h-[44px]`
+- Requirement chip remove button is `h-10 w-10` on mobile, `sm:h-6 sm:w-6` on larger screens
+- Submit and Cancel buttons are `min-h-[44px]`
 
 ---
 
@@ -449,6 +509,13 @@ A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mo
 |------|------|-------------|
 | `positions` | `{id, title}[]` | Available positions to assign |
 
+**Mobile:**
+- Wrapper padding `p-4 md:p-8`; form card padding `p-4 md:p-6`
+- Name/description inputs, date pickers, tag input, Add button, and position checkboxes use `text-base` / `min-h-[44px]`
+- Date grid switches from 1 column on mobile to 2 columns on `sm`
+- Position checkbox labels are `min-h-[44px]` for touch
+- Submit and Cancel buttons are `min-h-[44px]`
+
 ---
 
 ### `CandidateForm` (`candidates/new/CandidateForm.tsx`)
@@ -466,6 +533,12 @@ A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mo
 | Prop | Type | Description |
 |------|------|-------------|
 | `initialData` | `{id, name, email, skills, experienceYears, cv}` | Optional. When provided, form enters edit mode |
+
+**Mobile:**
+- Wrapper padding `p-4 md:p-8`; form card padding `p-4 md:p-6`
+- Name/email/experience inputs, skill input, Add button, and CV textarea use `text-base` / `min-h-[44px]`
+- Skill chip remove button is `h-10 w-10` on mobile, `sm:h-6 sm:w-6` on larger screens
+- Submit and Cancel buttons are `min-h-[44px]`
 
 ---
 
@@ -520,9 +593,15 @@ function Player() {
 
 **Responsibilities:**
 - Load Geist Sans + Mono fonts
-- Navigation bar with links to Dashboard, Setup, Positions, Candidates
+- Navigation bar with links to Dashboard, Setup, Positions, Candidates, Campaigns
 - Dark mode support via Tailwind `dark:` classes
 - Metadata (title, description)
+- Registers the PWA service worker on the client
+
+**Responsive behavior:**
+- Desktop (`md:` and up): horizontal link list (`hidden md:flex`)
+- Mobile (below `md`): hamburger menu rendered by `MobileNav` (`md:hidden`)
+- Same links are available in both contexts
 
 ---
 

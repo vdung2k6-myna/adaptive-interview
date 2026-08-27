@@ -292,7 +292,7 @@ export default function InterviewPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
         <p className="text-zinc-600 dark:text-zinc-400">Loading interview...</p>
       </div>
     );
@@ -300,16 +300,16 @@ export default function InterviewPage() {
 
   if (error && !data) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
         <div className="text-center">
-          <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
+          <p className="mb-4 text-red-600 dark:text-red-400">{error}</p>
           <button
             onClick={() => {
               setError("");
               setLoading(true);
               fetchSession();
             }}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-50 dark:text-zinc-900"
+            className="min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-50 dark:text-zinc-900"
           >
             Retry
           </button>
@@ -323,30 +323,32 @@ export default function InterviewPage() {
   return (
     <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950">
       <header className="border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto max-w-2xl flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-              {data?.position?.title || "Interview"}
-            </h1>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              {data?.candidate?.name} · {data?.position?.level}
-            </p>
-          </div>
-          <div className="text-sm text-zinc-500 dark:text-zinc-400">
-            {isComplete ? (
-              <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
-                Completed
-              </span>
-            ) : (
-              <span>
-                Turn {data?.session.currentTurn ?? 0}/{data?.session.maxTurns ?? 8}
-              </span>
-            )}
+        <div className="mx-auto max-w-2xl">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-base font-semibold text-zinc-900 dark:text-zinc-50 sm:text-lg">
+                {data?.position?.title || "Interview"}
+              </h1>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                {data?.candidate?.name} · {data?.position?.level}
+              </p>
+            </div>
+            <div className="text-sm text-zinc-500 dark:text-zinc-400">
+              {isComplete ? (
+                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
+                  Completed
+                </span>
+              ) : (
+                <span>
+                  Turn {data?.session.currentTurn ?? 0}/{data?.session.maxTurns ?? 8}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-4 py-6">
+      <main className="flex-1 overflow-y-auto px-4 py-4 md:py-6">
         <div className="mx-auto max-w-2xl space-y-4">
           {data?.messages.map((msg) => (
             <MessageBubble key={msg.id} msg={msg} />
@@ -354,11 +356,11 @@ export default function InterviewPage() {
 
           {sending && !streaming && (
             <div className="flex justify-start">
-              <div className="rounded-2xl bg-white px-4 py-3 shadow-sm border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700">
+              <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-800">
                 <div className="flex items-center gap-1">
-                  <div className="h-2 w-2 rounded-full bg-zinc-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <div className="h-2 w-2 rounded-full bg-zinc-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <div className="h-2 w-2 rounded-full bg-zinc-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+                  <div className="h-2 w-2 animate-bounce rounded-full bg-zinc-400" style={{ animationDelay: "0ms" }} />
+                  <div className="h-2 w-2 animate-bounce rounded-full bg-zinc-400" style={{ animationDelay: "150ms" }} />
+                  <div className="h-2 w-2 animate-bounce rounded-full bg-zinc-400" style={{ animationDelay: "300ms" }} />
                 </div>
               </div>
             </div>
@@ -371,7 +373,7 @@ export default function InterviewPage() {
       <footer className="border-t border-zinc-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto max-w-2xl">
           {isComplete ? (
-            <div className="text-center py-2">
+            <div className="py-2 text-center">
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
                 Thank you for completing the interview.
               </p>
@@ -384,12 +386,12 @@ export default function InterviewPage() {
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Type your answer..."
                 disabled={sending}
-                className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                className="min-h-[44px] flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
               />
               <button
                 type="submit"
                 disabled={sending || !input.trim()}
-                className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-base font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 Send
               </button>

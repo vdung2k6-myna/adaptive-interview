@@ -24,7 +24,7 @@ export default function CampaignsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+      <div className="min-h-screen bg-zinc-50 p-4 dark:bg-zinc-950 md:p-6">
         <div className="mx-auto max-w-5xl">
           <p className="text-zinc-500 dark:text-zinc-400">Loading campaigns...</p>
         </div>
@@ -34,12 +34,12 @@ export default function CampaignsPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+      <div className="min-h-screen bg-zinc-50 p-4 dark:bg-zinc-950 md:p-6">
         <div className="mx-auto max-w-5xl">
           <p className="text-red-600 dark:text-red-400">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="mt-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline"
+            className="mt-2 min-h-[44px] text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
           >
             Retry
           </button>
@@ -49,19 +49,20 @@ export default function CampaignsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+    <div className="min-h-screen bg-zinc-50 p-4 dark:bg-zinc-950 md:p-6">
       <div className="mx-auto max-w-5xl">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Campaigns</h1>
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50 sm:text-2xl">Campaigns</h1>
           <Link
             href="/campaigns/new"
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             + New Campaign
           </Link>
         </div>
 
-        <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 overflow-hidden">
+        {/* Desktop Table */}
+        <div className="hidden overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 md:block">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 dark:bg-zinc-800">
               <tr>
@@ -102,7 +103,7 @@ export default function CampaignsPage() {
 
                   return (
                     <tr key={c.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                      <td className="px-4 py-3 text-zinc-900 dark:text-zinc-50 font-medium">
+                      <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-50">
                         <Link href={`/campaigns/${c.id}`} className="hover:underline">
                           {c.name}
                         </Link>
@@ -117,7 +118,7 @@ export default function CampaignsPage() {
                         <div className="flex items-center justify-end gap-3">
                           <Link
                             href={`/campaigns/${c.id}`}
-                            className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline"
+                            className="min-h-[44px] px-2 text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
                           >
                             View
                           </Link>
@@ -134,6 +135,79 @@ export default function CampaignsPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Cards */}
+        <div className="space-y-3 md:hidden">
+          {campaigns.length === 0 ? (
+            <p className="text-center text-zinc-500 dark:text-zinc-400">
+              No campaigns yet.{" "}
+              <Link href="/campaigns/new" className="underline">Create one</Link>.
+            </p>
+          ) : (
+            campaigns.map((c) => {
+              const posCount = c.positionCount || 0;
+              const sessCount = c.sessionCount || 0;
+              const dateStr =
+                c.startDate && c.endDate
+                  ? `${new Date(c.startDate).toLocaleDateString()} – ${new Date(c.endDate).toLocaleDateString()}`
+                  : c.startDate
+                    ? `From ${new Date(c.startDate).toLocaleDateString()}`
+                    : c.endDate
+                      ? `Until ${new Date(c.endDate).toLocaleDateString()}`
+                      : "—";
+              const statusColor =
+                c.status === "active"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : c.status === "archived"
+                    ? "text-zinc-500 dark:text-zinc-400"
+                    : "text-amber-600 dark:text-amber-400";
+
+              return (
+                <div
+                  key={c.id}
+                  className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+                >
+                  <div className="mb-3 flex items-start justify-between">
+                    <Link
+                      href={`/campaigns/${c.id}`}
+                      className="font-medium text-zinc-900 hover:underline dark:text-zinc-50"
+                    >
+                      {c.name}
+                    </Link>
+                    <span className={`text-xs font-medium uppercase tracking-wide ${statusColor}`}>{c.status}</span>
+                  </div>
+
+                  <div className="mb-3 grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-zinc-500 dark:text-zinc-400">Positions:</span>{" "}
+                      <span className="font-medium text-zinc-900 dark:text-zinc-50">{posCount}</span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500 dark:text-zinc-400">Sessions:</span>{" "}
+                      <span className="font-medium text-zinc-900 dark:text-zinc-50">{sessCount}</span>
+                    </div>
+                  </div>
+
+                  <div className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">{dateStr}</div>
+
+                  <div className="flex flex-wrap items-center gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                    <Link
+                      href={`/campaigns/${c.id}`}
+                      className="min-h-[44px] px-2 text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                    >
+                      View
+                    </Link>
+                    <DeleteButton
+                      id={c.id}
+                      type="campaign"
+                      onDelete={() => setCampaigns((prev) => prev.filter((item) => item.id !== c.id))}
+                    />
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

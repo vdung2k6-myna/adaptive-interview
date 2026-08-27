@@ -105,6 +105,12 @@ export default function VoiceInterviewPage() {
   // Created inside the user-gesture handler so AudioContext is valid.
   const sentenceQueueRef = useRef<SentenceAudioQueue | null>(null);
 
+  // Per-turn generation counter and abort controller. A new recording
+  // invalidates any still-running SSE reader from the previous turn so stale
+  // chunks cannot leak into the new sentence queue.
+  const turnGenerationRef = useRef(0);
+  const turnAbortRef = useRef<AbortController | null>(null);
+
   // UI state driven by the queue callbacks
   const [queueCurrentIndex, setQueueCurrentIndex] = useState(-1);
   const [queueIsPlaying, setQueueIsPlaying] = useState(false);
@@ -251,6 +257,13 @@ export default function VoiceInterviewPage() {
     void _durationMs;
     if (!data || data.session.status === "completed") return;
 
+    // New turn: invalidate any still-running SSE reader from a previous turn.
+    const myGen = ++turnGenerationRef.current;
+    if (turnAbortRef.current) {
+      turnAbortRef.current.abort();
+      turnAbortRef.current = null;
+    }
+
     // Initialize AudioContext on user gesture so auto-play works for
     // subsequent streaming audio. Must happen inside the click handler.
     if (!audioCtxRef.current) {
@@ -327,12 +340,16 @@ export default function VoiceInterviewPage() {
     formData.append("sessionId", sessionId);
     formData.append("audio", blob, "recording.wav");
 
+    const turnAbortCtrl = new AbortController();
+    turnAbortRef.current = turnAbortCtrl;
+
     try {
       // Direct backend URL to bypass Next.js dev proxy buffering.
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
       const res = await apiFetch(`${backendUrl}/api/voice/stream`, {
         method: "POST",
         body: formData,
+        signal: turnAbortCtrl.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -347,6 +364,11 @@ export default function VoiceInterviewPage() {
       let buffer = "";
 
       while (true) {
+        if (myGen !== turnGenerationRef.current) {
+          await reader.cancel();
+          break;
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -372,6 +394,7 @@ export default function VoiceInterviewPage() {
 
             switch (eventName) {
               case "candidate": {
+                if (myGen !== turnGenerationRef.current) break;
                 const c = parsed as CandidateEvent;
                 setData((prev) => {
                   if (!prev) return prev;
@@ -392,6 +415,7 @@ export default function VoiceInterviewPage() {
               }
 
               case "sentence": {
+                if (myGen !== turnGenerationRef.current) break;
                 const s = parsed as SentenceEvent;
                 if (seenSentenceIndicesRef.current.has(s.index)) {
                   console.warn(
@@ -436,6 +460,7 @@ export default function VoiceInterviewPage() {
               }
 
               case "done": {
+                if (myGen !== turnGenerationRef.current) break;
                 const d = parsed as DoneEvent;
                 setProcessing(false);
                 setProcessingStep("");
@@ -462,6 +487,7 @@ export default function VoiceInterviewPage() {
               }
 
               case "error": {
+                if (myGen !== turnGenerationRef.current) break;
                 console.error("[VoiceInterview] SSE error event:", parsed);
                 // If we already received some sentences, show them; otherwise fallback
                 if (!hasReceivedSentencesRef.current) {
@@ -482,7 +508,18 @@ export default function VoiceInterviewPage() {
         }
       }
     } catch (err) {
+      // A newer turn has already started; ignore errors from the stale reader.
+      if (myGen !== turnGenerationRef.current) {
+        return;
+      }
+
       console.error("[VoiceInterview] SSE connection error:", err);
+      if (err instanceof Error && err.name === "AbortError") {
+        // Aborted by a newer turn — clean state silently.
+        setProcessing(false);
+        setProcessingStep("");
+        return;
+      }
       if (!hasReceivedSentencesRef.current) {
         setStreamFallback(true);
         await handleTurnFallback(blob);
@@ -491,6 +528,10 @@ export default function VoiceInterviewPage() {
         setError(err instanceof Error ? err.message : "Streaming error");
         setProcessing(false);
         setProcessingStep("");
+      }
+    } finally {
+      if (turnAbortRef.current === turnAbortCtrl) {
+        turnAbortRef.current = null;
       }
     }
   }
@@ -523,7 +564,7 @@ export default function VoiceInterviewPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
         <p className="text-zinc-600 dark:text-zinc-400">Loading voice interview...</p>
       </div>
     );
@@ -531,16 +572,16 @@ export default function VoiceInterviewPage() {
 
   if (error && !data) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
         <div className="text-center">
-          <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
+          <p className="mb-4 text-red-600 dark:text-red-400">{error}</p>
           <button
             onClick={() => {
               setError("");
               setLoading(true);
               fetchSession();
             }}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-50 dark:text-zinc-900"
+            className="min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-50 dark:text-zinc-900"
           >
             Retry
           </button>
@@ -558,7 +599,7 @@ export default function VoiceInterviewPage() {
   // Show "Start Interview" button if no messages yet and not started
   if (data && data.messages.length === 0 && !isComplete && !interviewStarted) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-4 dark:bg-zinc-950">
         <div className="text-center">
           <h1 className="mb-2 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
             {data.position?.title || "Interview"}
@@ -568,7 +609,7 @@ export default function VoiceInterviewPage() {
           </p>
           <button
             onClick={handleStartInterview}
-            className="rounded-lg bg-zinc-900 px-6 py-3 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="min-h-[48px] rounded-lg bg-zinc-900 px-6 py-3 text-base font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             🎙️ Start Interview
           </button>
@@ -578,58 +619,60 @@ export default function VoiceInterviewPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950">
+    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950">
       {/* Hidden audio element for fallback auto-play */}
       <audio ref={audioPlayerRef} />
 
       <header className="border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto max-w-2xl flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-              {data?.position?.title || "Interview"}
-            </h1>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              {data?.candidate?.name} · {data?.position?.level}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setUseStreaming((s) => !s)}
-              className="text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-              title="Toggle streaming mode"
-            >
-              {useStreaming ? "🌊 Streaming" : "⏹ Standard"}
-            </button>
-            <select
-              value={playbackRate}
-              onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
-              aria-label="Playback speed"
-              title="Playback speed"
-              className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-            >
-              <option value={0.5}>0.5x</option>
-              <option value={0.75}>0.75x</option>
-              <option value={1.0}>1.0x</option>
-              <option value={1.25}>1.25x</option>
-              <option value={1.5}>1.5x</option>
-              <option value={2.0}>2.0x</option>
-            </select>
-            <div className="text-sm text-zinc-500 dark:text-zinc-400">
-              {isComplete ? (
-                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
-                  Completed
-                </span>
-              ) : (
-                <span>
-                  Turn {data?.session.currentTurn ?? 0}/{data?.session.maxTurns ?? 8}
-                </span>
-              )}
+        <div className="mx-auto max-w-2xl">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-base font-semibold text-zinc-900 dark:text-zinc-50 sm:text-lg">
+                {data?.position?.title || "Interview"}
+              </h1>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                {data?.candidate?.name} · {data?.position?.level}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => setUseStreaming((s) => !s)}
+                className="min-h-[44px] text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                title="Toggle streaming mode"
+              >
+                {useStreaming ? "🌊 Streaming" : "⏹ Standard"}
+              </button>
+              <select
+                value={playbackRate}
+                onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
+                aria-label="Playback speed"
+                title="Playback speed"
+                className="min-h-[44px] rounded-lg border border-zinc-300 bg-white px-2 py-1 text-base text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+              >
+                <option value={0.5}>0.5x</option>
+                <option value={0.75}>0.75x</option>
+                <option value={1.0}>1.0x</option>
+                <option value={1.25}>1.25x</option>
+                <option value={1.5}>1.5x</option>
+                <option value={2.0}>2.0x</option>
+              </select>
+              <div className="text-sm text-zinc-500 dark:text-zinc-400">
+                {isComplete ? (
+                  <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
+                    Completed
+                  </span>
+                ) : (
+                  <span>
+                    Turn {data?.session.currentTurn ?? 0}/{data?.session.maxTurns ?? 8}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-4 py-6">
+      <main className="flex-1 overflow-y-auto px-4 py-4 md:py-6">
         <div className="mx-auto max-w-2xl space-y-4">
           {/* Previous messages */}
           {data?.messages.map((msg) => (
@@ -691,13 +734,13 @@ export default function VoiceInterviewPage() {
       <footer className="border-t border-zinc-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto max-w-2xl">
           {isComplete ? (
-            <div className="text-center py-2">
+            <div className="py-2 text-center">
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
                 Thank you for completing the interview.
               </p>
               <a
                 href={`/interview/${sessionId}/transcript`}
-                className="mt-2 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="mt-2 inline-flex min-h-[44px] items-center justify-center rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 View Transcript
               </a>
@@ -706,7 +749,7 @@ export default function VoiceInterviewPage() {
             <>
               {lastInterviewerMsg && !processing && streamItems.length === 0 && (
                 <div className="mb-3 text-center">
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
                     🤖 Interviewer spoke. Your turn to respond.
                   </p>
                 </div>

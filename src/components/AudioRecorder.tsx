@@ -239,10 +239,10 @@ export default function AudioRecorder({ onRecordingComplete, disabled }: AudioRe
           className="w-full rounded-2xl border-2 border-dashed border-zinc-300 bg-zinc-50 py-8 text-center transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
         >
           <div className="mb-2 text-4xl">🎙️</div>
-          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Click to start recording
+          <p className="text-base font-medium text-zinc-700 dark:text-zinc-300">
+            Tap to start recording
           </p>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             Speak clearly and concisely
           </p>
         </button>
@@ -270,7 +270,7 @@ export default function AudioRecorder({ onRecordingComplete, disabled }: AudioRe
           <div className="flex justify-center gap-3">
             <button
               onClick={stopRecording}
-              className="rounded-full bg-red-600 px-6 py-2 text-sm font-medium text-white hover:bg-red-700"
+              className="min-h-[44px] rounded-full bg-red-600 px-6 py-2 text-base font-medium text-white hover:bg-red-700"
             >
               ⏹ Stop
             </button>
@@ -294,7 +294,7 @@ export default function AudioRecorder({ onRecordingComplete, disabled }: AudioRe
               <p className="mb-2 text-sm text-zinc-600 dark:text-zinc-400">
                 Recording complete ({formatTime(durationMs)})
               </p>
-              <div className="flex justify-center gap-3">
+              <div className="flex flex-wrap justify-center gap-3">
                 <button
                   disabled={isSubmitting}
                   onClick={() => {
@@ -311,13 +311,13 @@ export default function AudioRecorder({ onRecordingComplete, disabled }: AudioRe
                     setDurationMs(0);
                     setWaveform(new Array(40).fill(0));
                   }}
-                  className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-base font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
                   ✓ Submit Answer
                 </button>
                 <button
                   onClick={discardRecording}
-                  className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  className="min-h-[44px] rounded-lg border border-zinc-300 px-4 py-2 text-base font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
                 >
                   🗑️ Discard
                 </button>

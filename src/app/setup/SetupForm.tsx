@@ -67,7 +67,7 @@ export default function SetupForm({
   }
 
   return (
-    <div className="max-w-lg mx-auto mt-12 p-6 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="max-w-lg mx-auto mt-6 md:mt-12 p-4 md:p-6 rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <h1 className="text-2xl font-semibold mb-6 text-zinc-900 dark:text-zinc-50">
         Start Interview Session
       </h1>
@@ -80,7 +80,7 @@ export default function SetupForm({
           <select
             value={positionId}
             onChange={(e) => setPositionId(e.target.value)}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base min-h-[44px] text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           >
             <option value="">Select a position...</option>
             {positions.map((p) => (
@@ -106,7 +106,7 @@ export default function SetupForm({
           <select
             value={candidateId}
             onChange={(e) => setCandidateId(e.target.value)}
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base min-h-[44px] text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
           >
             <option value="">Select a candidate...</option>
             {candidates.map((c) => (
@@ -133,7 +133,7 @@ export default function SetupForm({
             <button
               type="button"
               onClick={() => setMode("text")}
-              className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
+              className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-2 text-base text-center transition-colors ${
                 mode === "text"
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -144,7 +144,7 @@ export default function SetupForm({
             <button
               type="button"
               onClick={() => setMode("voice")}
-              className={`flex-1 rounded-lg border px-3 py-2 text-sm text-center transition-colors ${
+              className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-2 text-base text-center transition-colors ${
                 mode === "voice"
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -162,7 +162,7 @@ export default function SetupForm({
                 <button
                   type="button"
                   onClick={() => setTtsProvider("kokoro")}
-                  className={`flex-1 rounded-lg border px-3 py-1.5 text-xs text-center transition-colors ${
+                  className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
                     ttsProvider === "kokoro"
                       ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                       : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -173,7 +173,7 @@ export default function SetupForm({
                 <button
                   type="button"
                   onClick={() => setTtsProvider("piper")}
-                  className={`flex-1 rounded-lg border px-3 py-1.5 text-xs text-center transition-colors ${
+                  className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
                     ttsProvider === "piper"
                       ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                       : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -196,13 +196,13 @@ export default function SetupForm({
         <div className="flex gap-4 text-sm">
           <a
             href="/positions/new"
-            className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline underline-offset-2"
+            className="min-h-[44px] inline-flex items-center text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline underline-offset-2"
           >
             + New Position
           </a>
           <a
             href="/candidates/new"
-            className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline underline-offset-2"
+            className="min-h-[44px] inline-flex items-center text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 underline underline-offset-2"
           >
             + New Candidate
           </a>
@@ -211,7 +211,7 @@ export default function SetupForm({
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-white font-medium hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          className="w-full min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-base text-white font-medium hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
         >
           {loading ? "Creating..." : "Create Interview Session"}
         </button>
@@ -226,12 +226,12 @@ export default function SetupForm({
             <input
               readOnly
               value={interviewUrl}
-              className="flex-1 rounded-md border border-zinc-300 px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+              className="flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-base min-h-[44px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             />
             <button
               type="button"
               onClick={() => navigator.clipboard.writeText(interviewUrl)}
-              className="rounded-md border border-zinc-300 px-3 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-700"
+              className="min-h-[44px] rounded-md border border-zinc-300 px-3 py-1.5 text-base font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-700"
             >
               Copy
             </button>

@@ -46,7 +46,7 @@ export default function DeleteButton({ id, type, onDelete }: DeleteButtonProps) 
     <button
       onClick={handleDelete}
       disabled={deleting}
-      className="text-sm text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 underline disabled:opacity-50"
+      className="min-h-[44px] px-2 text-sm text-red-600 underline hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
     >
       {deleting ? "Deleting..." : "Delete"}
     </button>
