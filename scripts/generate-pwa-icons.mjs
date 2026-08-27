@@ -199,6 +199,46 @@ function createMaskableIcon(size) {
   return createIcon(size, 0.22);
 }
 
+function createSplashScreen(width, height) {
+  // iOS launch screen: dark background with the brand glyph centered.
+  // The glyph is sized to stay well within the safe central area on both
+  // notched phones and iPads.
+  const pixels = Array.from({ length: width * height }, () => ({ r: 0, g: 0, b: 0, a: 0 }));
+  const bgColor = { ...BG, a: 255 };
+  const glyphColor = { ...GLYPH, a: 255 };
+
+  // Solid dark background
+  fillRect(pixels, width, 0, 0, width, height, bgColor);
+
+  // Centered speech bubble glyph, ~35-45% of the smaller dimension
+  const minDim = Math.min(width, height);
+  const bubbleW = Math.round(minDim * 0.4);
+  const bubbleH = Math.round(bubbleW * 0.72);
+  const bubbleX = Math.round((width - bubbleW) / 2);
+  const bubbleY = Math.round((height - bubbleH) / 2);
+  const bubbleR = Math.round(bubbleW * 0.18);
+  fillRoundedRect(pixels, width, height, bubbleX, bubbleY, bubbleW, bubbleH, bubbleR, glyphColor);
+
+  // Bubble tail at bottom-left
+  const tailW = Math.round(minDim * 0.09);
+  const tailH = Math.round(minDim * 0.075);
+  const tailX = bubbleX + bubbleR;
+  const tailY = bubbleY + bubbleH - Math.round(minDim * 0.02);
+  for (let y = 0; y < tailH; y++) {
+    const rowWidth = Math.round((tailW * (tailH - y)) / tailH);
+    fillRect(pixels, width, tailX, tailY + y, rowWidth, 1, glyphColor);
+  }
+
+  // Two small dark dots inside the bubble as "eyes"
+  const dotR = Math.round(minDim * 0.022);
+  const dotY = bubbleY + bubbleH / 2;
+  const dotOffset = Math.round(bubbleW * 0.22);
+  drawCircle(pixels, width, height, bubbleX + bubbleW / 2 - dotOffset, dotY, dotR, bgColor);
+  drawCircle(pixels, width, height, bubbleX + bubbleW / 2 + dotOffset, dotY, dotR, bgColor);
+
+  return pixels;
+}
+
 async function main() {
   console.log("Generating PWA icons...");
 
@@ -207,7 +247,34 @@ async function main() {
   await writePng(path.join(PUBLIC_DIR, "icon-maskable.png"), 512, 512, createMaskableIcon(512));
   await writePng(path.join(PUBLIC_DIR, "apple-touch-icon.png"), 180, 180, createIcon(180));
 
-  console.log("Icons generated in public/");
+  console.log("Generating iOS splash screens...");
+
+  await writePng(
+    path.join(PUBLIC_DIR, "apple-touch-startup-image-1170x2532.png"),
+    1170,
+    2532,
+    createSplashScreen(1170, 2532)
+  );
+  await writePng(
+    path.join(PUBLIC_DIR, "apple-touch-startup-image-1290x2796.png"),
+    1290,
+    2796,
+    createSplashScreen(1290, 2796)
+  );
+  await writePng(
+    path.join(PUBLIC_DIR, "apple-touch-startup-image-1668x2388.png"),
+    1668,
+    2388,
+    createSplashScreen(1668, 2388)
+  );
+  await writePng(
+    path.join(PUBLIC_DIR, "apple-touch-startup-image-2048x2732.png"),
+    2048,
+    2732,
+    createSplashScreen(2048, 2732)
+  );
+
+  console.log("PWA assets generated in public/");
 }
 
 main().catch((err) => {

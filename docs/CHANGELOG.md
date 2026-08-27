@@ -34,6 +34,35 @@
 
 ## 2026-08-27
 
+### Add PWA Support for iOS Installability
+
+**Change:** `add-pwa-ios-installability` (OpenSpec)
+
+**Problem:** The Android PWA change left iOS support out of scope. iPhone and iPad users who open an interview link in Safari get a browser-tab experience with address bar chrome and no standalone launch or branded splash screen.
+
+**Solution:** Added iOS-specific PWA metadata and splash screens so Safari can add the app to the Home Screen and launch it in a standalone, chromeless window.
+
+**What changed:**
+- Assets:
+  - Generated `public/apple-touch-startup-image-1170x2532.png`, `public/apple-touch-startup-image-1290x2796.png`, `public/apple-touch-startup-image-1668x2388.png`, and `public/apple-touch-startup-image-2048x2732.png` for core iPhone/iPad portrait sizes
+  - Regenerated `public/apple-touch-icon.png` via `scripts/generate-pwa-icons.mjs`
+- Generator:
+  - Extended `scripts/generate-pwa-icons.mjs` with `createSplashScreen(width, height)` and added the four iOS splash screen outputs
+- Layout:
+  - Updated `src/app/layout.tsx` with `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, `apple-mobile-web-app-title`, and `apple-touch-startup-image` links
+  - Added `viewportFit: "cover"` to the Next.js `viewport` export for edge-to-edge rendering on notched devices
+  - Added `env(safe-area-inset-top)` padding to the top navigation bar to avoid overlap with the status bar/Dynamic Island
+- Documentation:
+  - Updated `docs/ARCHITECTURE.md` with iOS PWA behavior and meta tag table
+  - Updated `docs/SETUP.md` with iOS install flow, splash screen generation, and testing notes
+  - Updated `docs/CHANGELOG.md` (this entry)
+
+**Status:** Implemented and documented. Manual iOS install/standalone/voice testing required for full validation.
+
+---
+
+## 2026-08-27
+
 ### Make Web UI Mobile Adaptive
 
 **Change:** `adaptive-mobile-ui` (OpenSpec)

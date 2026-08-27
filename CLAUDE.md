@@ -19,6 +19,7 @@ This document defines the conventions, standards, and expectations for AI-assist
 - [Environment & Configuration](#environment--configuration)
 - [Dependency Management](#dependency-management)
 - [Troubleshooting Checklist](#troubleshooting-checklist)
+- [PWA Install Guide](docs/PWA-INSTALL.md)
 
 ---
 

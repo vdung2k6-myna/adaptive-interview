@@ -139,17 +139,28 @@ PWA assets generated during the build:
 | Service Worker | `/sw.js` | Caches the shell; stamped per build to avoid stale caches |
 | Icons | `/icon-192.png`, `/icon-512.png`, `/icon-maskable.png` | Launcher and adaptive icons |
 | Apple Touch Icon | `/apple-touch-icon.png` | iOS home screen icon |
+| iOS Splash Screens | `/apple-touch-startup-image-*.png` | Branded launch images for iPhone/iPad |
 | Offline fallback | `/offline.html` | Shown when the app is launched without connectivity |
 
 The `scripts/postbuild.mjs` step copies `public/` into `.next/standalone/public/` and stamps the service worker cache version with a build id. Do not disable this step for production builds.
 
-To regenerate the icon set from the source generator:
+To regenerate the icon and splash-screen set from the source generator:
 
 ```bash
+npm run pwa:assets
+# or directly:
 node scripts/generate-pwa-icons.mjs
 ```
 
 > **Note:** PWA install prompts and service workers require a secure context (HTTPS or `localhost` for local development). HTTP-only production deployments will not show the install banner.
+
+#### iOS-specific notes
+
+- iOS Safari does **not** show an install banner. Users install via **Share → Add to Home Screen**.
+- Standalone launch on iOS requires the `apple-mobile-web-app-capable` meta tag (already in `src/app/layout.tsx`).
+- The status bar uses `black-translucent` and the viewport uses `viewport-fit=cover` so the app renders edge-to-edge on notched devices.
+- The top navigation bar adds `env(safe-area-inset-top)` padding to avoid overlapping the Dynamic Island/status bar.
+- Voice interviews in iOS standalone mode require manual testing; microphone permission behavior varies across iOS versions.
 
 ### Deploy with PM2
 

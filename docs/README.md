@@ -16,6 +16,7 @@ Welcome to the **Adaptive Interview Engine** developer docs. This is a comprehen
 | [Performance](PERFORMANCE.md) | Performance considerations and optimizations |
 | [Security](SECURITY.md) | Security best practices and considerations |
 | [OpenSpec](OPENSPEC.md) | How we use OpenSpec for change management |
+| [PWA Install Guide](PWA-INSTALL.md) | How to install the app on Android and iOS |
 | [Changelog](CHANGELOG.md) | Recent changes and design decisions |
 
 ## Project Overview

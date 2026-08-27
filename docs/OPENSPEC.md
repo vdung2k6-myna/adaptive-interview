@@ -103,14 +103,12 @@ created: 2026-08-08
 
 ## Current Active Changes
 
-```
-$ openspec list --json
-{
-  "changes": []
-}
-```
-
-All recent changes have been archived. See `openspec/changes/archive/` for completed history.
+| Change | Status | Description |
+|---|---|---|
+| `adaptive-mobile-ui` | In Progress | Make Web UI Mobile Adaptive |
+| `add-pwa-android-installability` | In Progress | Add PWA Support for Android Installability |
+| `add-pwa-ios-installability` | In Progress | Add PWA Support for iOS Installability |
+| `fix-audio-streaming-stop-regressions` | In Progress | Fix Audio Streaming Stop Regressions |
 
 ## Archived Changes
 

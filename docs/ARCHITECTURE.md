@@ -401,11 +401,11 @@ Both the transcript page and the voice interview page use a **generation-counter
 
 ## PWA / Service Worker Architecture
 
-The frontend is packaged as a Progressive Web App so Android users can install it from Chrome and launch it in a standalone window.
+The frontend is packaged as a Progressive Web App so Android and iOS users can install it on their home screen and launch it in a standalone window.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     BROWSER / ANDROID                       │
+│                   BROWSER / ANDROID / iOS                   │
 │  ┌─────────────┐  ┌─────────────────┐  ┌─────────────────┐   │
 │  │  manifest   │  │  service worker │  │  offline.html   │   │
 │  │  .json      │  │  sw.js          │  │                 │   │
@@ -425,12 +425,28 @@ The frontend is packaged as a Progressive Web App so Android users can install i
 
 **Key points:**
 
-- `public/manifest.json` declares `display: standalone`, icons, theme colors, and start URL.
+- `public/manifest.json` declares `display: standalone`, icons, theme colors, and start URL. Chrome on Android uses it for the install prompt.
 - `public/sw.js` is registered by a small script in `src/app/layout.tsx`. It precaches the root shell, `offline.html`, and `manifest.json`, then uses a network-first strategy for API and audio requests. Immutable Next.js static chunks (`/_next/static/*`) are cached long-term.
 - The service worker cache name includes a build id that `scripts/postbuild.mjs` stamps after each build. Old caches are deleted on activation, preventing stale shells across deployments.
 - `public/offline.html` is served when the user launches the PWA without connectivity.
 - PWA assets live in `public/` and are copied into `.next/standalone/public/` by `scripts/postbuild.mjs`.
 - HTTPS is required in production for the install prompt; local development over `localhost` still allows service worker registration.
+
+### iOS-specific PWA behavior
+
+iOS Safari does not use `manifest.json` for standalone launch. Instead it relies on `src/app/layout.tsx` metadata:
+
+| Meta tag / asset | Purpose |
+|---|---|
+| `apple-mobile-web-app-capable` | Enables Share → Add to Home Screen to launch in standalone mode |
+| `apple-mobile-web-app-status-bar-style` | Controls status bar appearance (`black-translucent`) |
+| `apple-mobile-web-app-title` | Home Screen icon label (`Interviews`) |
+| `apple-touch-icon.png` | Home Screen icon (180×180) |
+| `apple-touch-startup-image-*.png` | Branded launch splash screens for common iPhone/iPad sizes |
+| `viewport-fit=cover` | Lets the app render edge-to-edge on notched devices |
+| `env(safe-area-inset-top)` padding on the nav bar | Prevents the top navigation from hiding under the Dynamic Island/status bar |
+
+iOS users install via **Safari Share → Add to Home Screen**. Standalone iOS Web Apps share the same service worker and offline fallback as Android, but microphone permission behavior for voice interviews must be validated on a real device.
 
 ## Important Conventions
 
