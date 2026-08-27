@@ -104,30 +104,32 @@ import type { Message } from "@/lib/schema";      // Types
 ### Layer Separation
 
 ```
-Presentation (Pages/Components)
+Presentation (Pages/Components)        ← this repo
     ↓
-API Layer (Next.js Route Handlers)
+API Layer (Express Route Handlers)     ← adaptive-interview-api
     ↓
-Business Logic (lib/prompts.ts, lib/evaluation.ts, lib/ollama.ts)
+Business Logic (lib/prompts.ts, lib/evaluation.ts, lib/ollama.ts)  ← backend
     ↓
-Data Access (lib/db.ts, lib/schema.ts)
+Data Access (lib/db.ts, lib/schema.ts) ← backend
     ↓
-PostgreSQL + pgvector
+PostgreSQL + pgvector                  ← backend
 ```
 
 **Rules:**
-- Pages don't import from `db.ts` directly — go through API routes
-- Business logic is pure TypeScript — no React dependencies
-- API routes handle HTTP concerns (status codes, headers, streaming)
+- The frontend has **no database connection** — all data comes from the backend Express API
+- Frontend pages use `apiFetch()` to call backend API routes
+- Business logic is pure TypeScript in the backend — no React dependencies
+- Backend API routes handle HTTP concerns (status codes, headers, streaming)
 
 ### Data Flow
 
-1. User action → API route handler
-2. API route → business logic function
-3. Business logic → database queries
-4. Response streamed or returned as JSON
+1. User action → frontend Client Component
+2. Client Component → `apiFetch()` → backend API route handler
+3. Backend API route → business logic function
+4. Business logic → database queries
+5. Response streamed or returned as JSON to the frontend
 
-**No direct DB access from client components.**
+**No direct DB access from the frontend. Backend architecture is documented in `adaptive-interview-api/docs/ARCHITECTURE.md`.**
 
 ### State Management
 
@@ -181,12 +183,12 @@ refactor-message-bubble
 
 | Change Type | Documents to Update |
 |-------------|---------------------|
-| **New API endpoint** | `API.md`, `ARCHITECTURE.md` |
-| **New database table/column** | `DATABASE.md`, `ARCHITECTURE.md` |
+| **New API endpoint** | `API.md` (link to backend), `ARCHITECTURE.md` |
+| **New database table/column** | Backend `DATABASE.md`, `ARCHITECTURE.md` |
 | **New component** | `COMPONENTS.md`, `ARCHITECTURE.md` |
-| **Ollama/prompt changes** | `OLLAMA.md`, `ARCHITECTURE.md` |
-| **Evaluation changes** | `EVALUATION.md`, `ARCHITECTURE.md` |
-| **Performance optimization** | `PERFORMANCE.md`, `CHANGELOG.md` |
+| **Ollama/prompt changes** | Backend `OLLAMA.md`, `ARCHITECTURE.md` |
+| **Evaluation changes** | Backend `EVALUATION.md`, `ARCHITECTURE.md` |
+| **Performance optimization** | Backend `PERFORMANCE.md` + frontend `CHANGELOG.md` |
 | **Security fix** | `SECURITY.md`, `CHANGELOG.md` |
 | **Dependency added/removed** | `SETUP.md`, `ARCHITECTURE.md` |
 | **Environment variable added** | `SETUP.md`, `SECURITY.md` |
@@ -197,14 +199,14 @@ refactor-message-bubble
 
 **Before marking a task complete, verify:**
 
-- [ ] `docs/API.md` — Updated if endpoints changed
-- [ ] `docs/ARCHITECTURE.md` — Updated if system design changed
-- [ ] `docs/DATABASE.md` — Updated if schema changed
+- [ ] `docs/API.md` — Updated if endpoints changed (links to backend reference)
+- [ ] `docs/ARCHITECTURE.md` — Updated if frontend system design changed
+- [ ] Backend `DATABASE.md` — Updated if schema changed
 - [ ] `docs/COMPONENTS.md` — Updated if components changed
-- [ ] `docs/OLLAMA.md` — Updated if AI integration changed
-- [ ] `docs/EVALUATION.md` — Updated if scoring changed
-- [ ] `docs/PERFORMANCE.md` — Updated if performance characteristics changed
-- [ ] `docs/SECURITY.md` — Updated if attack surface changed
+- [ ] Backend `OLLAMA.md` — Updated if AI integration changed
+- [ ] Backend `EVALUATION.md` — Updated if scoring changed
+- [ ] Backend `PERFORMANCE.md` — Updated if backend performance changed; update `CHANGELOG.md` for frontend performance changes
+- [ ] `docs/SECURITY.md` — Updated if frontend attack surface changed
 - [ ] `docs/SETUP.md` — Updated if setup steps changed
 - [ ] `docs/CHANGELOG.md` — Updated with entry for this change
 - [ ] `docs/OPENSPEC.md` — Updated if workflow changed
@@ -343,7 +345,21 @@ Brief description of what changed.
 
 ## Environment & Configuration
 
-### Required Environment Variables
+### Frontend Environment Variables
+
+Create in frontend `.env.local`:
+
+```bash
+# Only needed when backend API_AUTH_TOKEN is configured
+NEXT_PUBLIC_API_TOKEN=your-secret-token-here
+
+# Optional: override backend origin in production
+# NEXT_PUBLIC_API_URL=https://api.example.com
+```
+
+### Backend Environment Variables
+
+Database, Ollama, audio service, and MCP variables live in the backend `.env`:
 
 ```bash
 DATABASE_URL=postgresql://user:password@localhost:5432/ai_interview
@@ -352,7 +368,7 @@ OLLAMA_MODEL=llama3.1
 OLLAMA_EMBED_MODEL=mxbai-embed-large
 ```
 
-### Optional Environment Variables
+### Optional Backend Variables
 
 ```bash
 EMBEDDING_SIMILARITY_THRESHOLD=0.75  # Default: 0.75
@@ -363,6 +379,7 @@ EMBEDDING_SIMILARITY_THRESHOLD=0.75  # Default: 0.75
 | Service | Default Port |
 |---------|-------------|
 | Next.js dev | 3000 |
+| Backend API | 4000 |
 | PostgreSQL | 5432 |
 | Ollama | 11434 |
 
@@ -399,16 +416,17 @@ npm uninstall <pkg>
 
 When something breaks, check in this order:
 
-1. **Build passes?** `npm run build`
-2. **Lint passes?** `npm run lint`
-3. **Database running?** `pg_isready`
-4. **Migrations applied?** `npx drizzle-kit migrate`
-5. **Ollama running?** `ollama list`
-6. **Models pulled?** `ollama pull llama3.1`
-7. **Env vars set?** `cat .env.local`
-8. **Browser console clear?** Check DevTools
-9. **Network requests succeed?** Check DevTools Network tab
-10. **Docs updated?** Verify `docs/` reflects current code
+1. **Build passes?** `npm run build` (run in both repos)
+2. **Lint passes?** `npm run lint` (run in both repos)
+3. **Backend running?** `curl http://localhost:4000/api/health`
+4. **Database running?** `pg_isready` (backend)
+5. **Migrations applied?** `npx drizzle-kit migrate` (backend)
+6. **Ollama running?** `ollama list` (backend host)
+7. **Models pulled?** `ollama pull llama3.1` (backend host)
+8. **Env vars set?** Check backend `.env` and frontend `.env.local`
+9. **Browser console clear?** Check DevTools
+10. **Network requests succeed?** Check DevTools Network tab
+11. **Docs updated?** Verify both `docs/` directories reflect current code
 
 ---
 
@@ -430,12 +448,14 @@ When Claude or another AI assistant works on this project:
 ## Contact & Escalation
 
 - **Questions about OpenSpec workflow** — See `docs/OPENSPEC.md`
-- **Questions about architecture** — See `docs/ARCHITECTURE.md`
-- **Questions about security** — See `docs/SECURITY.md`
+- **Questions about frontend architecture** — See `docs/ARCHITECTURE.md`
+- **Questions about backend architecture** — See `adaptive-interview-api/docs/ARCHITECTURE.md`
+- **Questions about frontend security** — See `docs/SECURITY.md`
+- **Questions about backend security** — See `adaptive-interview-api/docs/SECURITY.md`
 - **Found a bug** — Create an OpenSpec change to fix it
 
 ---
 
-*Last updated: 2026-08-08*
+*Last updated: 2026-08-27*
 
 **Remember: Outdated documentation is a bug. Update docs with every change.**

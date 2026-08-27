@@ -4,7 +4,7 @@ An AI-powered technical interview platform that generates personalized, context-
 
 This repository contains the **Next.js frontend**. The API backend lives in the separate [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api) repository.
 
-> **📌 Keep docs in sync:** This README must be updated whenever features, routes, schema, or scripts change. See [`CLAUDE.md`](CLAUDE.md) for the documentation requirements checklist.
+> **📌 Keep docs in sync:** This README must be updated whenever features, routes, scripts, or PWA behavior change. See [`CLAUDE.md`](CLAUDE.md) for the documentation requirements checklist.
 
 ---
 
@@ -15,9 +15,8 @@ This repository contains the **Next.js frontend**. The API backend lives in the 
 - **Job Description Support** — Attach a long-form job description to any position for richer AI context during interviews and evaluations
 - **Real-Time Streaming** — Interviewer responses stream token-by-token from the backend via Ollama's `stream: true`
 - **Rich Markdown Rendering** — Interviewer messages render Markdown (bold, lists, code blocks) with syntax highlighting via `highlight.js` and safe HTML via `DOMPurify`
-- **Semantic Topic Tracking** — Vector embeddings (pgvector) in the backend track which position requirements have been covered
 - **Turn-Based Sessions** — Configurable max turns per interview (default: 8). Auto-completes when the limit is reached
-- **AI Evaluation** — Post-interview structured scoring across 4 dimensions with strengths, weaknesses, and a hire recommendation
+- **AI Evaluation** — Post-interview structured scoring across multiple dimensions with strengths, weaknesses, and a hire recommendation
 - **Human Calibration** — Recruiters can override AI scores, adjust recommendations, and leave notes. All versions are preserved
 - **Recruiter Dashboard** — Centralized view of all sessions with status filters, search, stats cards, and color-coded recommendation badges
 - **Side-by-Side Comparison** — Compare two candidates' evaluations on `/compare?a=[id]&b=[id]`
@@ -25,9 +24,9 @@ This repository contains the **Next.js frontend**. The API backend lives in the 
 - **Position & Candidate Management** — Create, list, edit, and delete positions and candidates (edit/delete blocked if the entity is already in use by a session)
 - **Recruiting Campaigns** — Group positions into campaigns with aggregated metrics: sessions, completion rate, score averages, recommendation distribution, and top candidates
 - **Voice Interviews** — Optional turn-based voice mode: candidates record answers via microphone; the backend transcribes via audio.cpp (STT) and speaks back via TTS. Supports **Kokoro** (default) and **Piper**
+- **Interview Language** — Each session runs in `english` or `vietnamese`; the backend adjusts prompts and TTS voice selection accordingly
 - **Mobile-First Responsive UI** — All admin, setup, and interview pages adapt down to 375px wide. Tables become card lists on phones, touch targets are ≥44×44px, and form inputs use `text-base` to prevent iOS Safari auto-zoom
-- **PWA Installability (Android)** — Add-to-home-screen support with a Web App Manifest, service worker, offline fallback, and standalone display mode for chromeless voice interviews
-- **MCP Analytics Server** — External AI clients can query anonymized interview data via MCP protocol. Implemented in the backend at `/api/mcp`
+- **PWA Installability (Android + iOS)** — Add-to-home-screen support with a Web App Manifest, service worker, offline fallback, Apple touch icons, startup splash images, and standalone display mode for chromeless voice interviews
 
 ---
 
@@ -42,8 +41,9 @@ This repository contains the **Next.js frontend**. The API backend lives in the 
 | HTTP | `fetch` via `apiFetch()` wrapper |
 | Markdown | `marked` + `highlight.js` + `DOMPurify` |
 | Fonts | Geist (Sans + Mono) |
+| PWA | Web App Manifest + Service Worker |
 
-The backend uses Express, Drizzle ORM, PostgreSQL + pgvector, and Ollama. See the backend repo for its stack details.
+The backend uses Express, Drizzle ORM, PostgreSQL + pgvector, Ollama, and audio services. See the backend repo for its stack details.
 
 ---
 
@@ -79,13 +79,19 @@ The frontend is a **pure presentation layer**. All API calls go to the standalon
 src/
 ├── app/                          # Next.js App Router (pages)
 │   ├── candidates/               # Candidate list + forms (Client Components)
+│   ├── candidates/new/           # Candidate creation form (Client Component)
+│   ├── candidates/[id]/edit/     # Candidate edit form (Client Component)
 │   ├── campaigns/                # Campaign list + detail + forms (Client Components)
+│   ├── campaigns/new/            # Campaign creation form (Client Component)
+│   ├── campaigns/[id]/           # Campaign detail + report (Client Component)
 │   ├── compare/                  # Side-by-side comparison (Client Component)
 │   ├── dashboard/                # Recruiter dashboard (Client Component)
 │   ├── interview/[id]/           # Live interview chat (Client Component)
 │   │   ├── voice/                # Voice interview page (Client Component)
 │   │   └── transcript/           # Transcript + evaluation (Client Component)
 │   ├── positions/                # Position list + forms (Client Components)
+│   ├── positions/new/            # Position creation form (Client Component)
+│   ├── positions/[id]/edit/      # Position edit form (Client Component)
 │   ├── setup/                    # Interview setup (Client Component)
 │   ├── error.tsx                 # Global error boundary
 │   ├── globals.css               # Tailwind + Markdown + syntax styles
@@ -108,6 +114,7 @@ src/
     │   ├── development.ts          # Dev settings
     │   └── production.ts           # Production settings
     ├── types.ts                  # Lightweight TypeScript interfaces
+    ├── use-playback-rate.ts      # Persistent AI voice playback-rate hook
     └── audio/
         └── sentence-queue.ts     # Client-side sequential audio playback
 ```
@@ -247,22 +254,27 @@ pm2 logs interview-engine-ui
 
 ## Documentation
 
-- [`docs/API.md`](docs/API.md) — Link to backend API reference
+Frontend docs in this repo:
+
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Frontend architecture and data flow
+- [`docs/API.md`](docs/API.md) — Link to backend API reference
 - [`docs/COMPONENTS.md`](docs/COMPONENTS.md) — React component inventory
-- [`docs/DATABASE.md`](docs/DATABASE.md) — Database is backend-only
-- [`docs/EVALUATION.md`](docs/EVALUATION.md) — Scoring and calibration
-- [`docs/OLLAMA.md`](docs/OLLAMA.md) — Ollama integration from frontend perspective
-- [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) — Frontend optimization
-- [`docs/SECURITY.md`](docs/SECURITY.md) — Security considerations
+- [`docs/SECURITY.md`](docs/SECURITY.md) — Frontend security considerations
 - [`docs/SETUP.md`](docs/SETUP.md) — Frontend setup
+- [`docs/OPENSPEC.md`](docs/OPENSPEC.md) — Change management workflow
+- [`docs/PWA-INSTALL.md`](docs/PWA-INSTALL.md) — How to install on Android and iOS
 - [`docs/CHANGELOG.md`](docs/CHANGELOG.md) — Feature history
 
-Backend docs:
+Backend docs (`adaptive-interview-api`):
 
 - [Backend Setup](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SETUP.md)
 - [Backend API Reference](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/API.md)
 - [Backend Architecture](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/ARCHITECTURE.md)
+- [Database](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/DATABASE.md)
+- [Evaluation](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/EVALUATION.md)
+- [Ollama Integration](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/OLLAMA.md)
+- [Performance](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/PERFORMANCE.md)
+- [Backend Security](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SECURITY.md)
 
 ---
 

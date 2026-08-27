@@ -4,6 +4,37 @@
 
 ## 2026-08-27
 
+### Consolidate Backend Documentation in Backend Repository
+
+**Change:** `consolidate-docs-in-backend` (OpenSpec)
+
+**Problem:** After the backend extraction, the frontend repository still owned several backend-specific documents (`DATABASE.md`, `EVALUATION.md`, `OLLAMA.md`, `PERFORMANCE.md`). These docs described backend internals, schema, prompts, and tuning, which contradicted the frontend's role as a pure presentation layer. Keeping them in the frontend created duplicate sources of truth and stale links.
+
+**Solution:** Moved all backend-specific documentation to the authoritative `adaptive-interview-api` repository and rewrote the remaining frontend docs to focus only on frontend concerns.
+
+**What changed:**
+- Backend (`adaptive-interview-api`):
+  - Created `adaptive-interview-api/docs/DATABASE.md` — full schema, migrations, vector search, seeding, backup/restore
+  - Created `adaptive-interview-api/docs/EVALUATION.md` — AI scoring system, async job flow, version history, calibration
+  - Created `adaptive-interview-api/docs/OLLAMA.md` — model config, prompt construction, streaming, embedding
+  - Created `adaptive-interview-api/docs/PERFORMANCE.md` — backend bottlenecks + frontend rendering notes
+  - Updated `README.md` to link to the new docs
+  - Updated `.env.example` with missing environment variables (`EMBEDDING_SIMILARITY_THRESHOLD`, `MCP_ENABLED`, voice map placeholders)
+- Frontend (`adaptive-interview`):
+  - Deleted `docs/DATABASE.md`, `docs/EVALUATION.md`, `docs/OLLAMA.md`, `docs/PERFORMANCE.md`
+  - Rewrote `docs/ARCHITECTURE.md` to be frontend-only (removed backend internals, fixed layer diagram)
+  - Rewrote `docs/SECURITY.md` to cover only client-side concerns (DOMPurify, PWA, client env vars, voice privacy)
+  - Updated `docs/README.md` quick-links (removed moved docs, added backend docs section, fixed diagram labels)
+  - Updated root `README.md` docs list, feature list (iOS PWA, interview language), and architecture diagram
+  - Updated `CLAUDE.md` architecture diagram, doc update table, environment variables, troubleshooting checklist
+  - Updated historical changelog entries to point to backend doc paths
+
+**Status:** Implemented and documented. Build and lint validation pending.
+
+---
+
+## 2026-08-27
+
 ### Reduce Speak First-Chunk Latency on Transcript Page
 
 **Change:** `reduce-speak-first-chunk-latency` (OpenSpec)
@@ -152,7 +183,7 @@
 
 **What changed:**
 - `adaptive-interview-api/src/lib/prompts.ts` — added technical-first rules to `buildSystemPrompt`.
-- `docs/OLLAMA.md` — updated prompt-construction example to reflect the new guidance.
+- `adaptive-interview-api/docs/OLLAMA.md` — updated prompt-construction example to reflect the new guidance.
 
 **Status:** Implemented and documented. Manual regression test across early interview turns pending.
 
@@ -386,8 +417,8 @@
   - Rewrote `README.md` as a landing page linking to docs
   - Fixed `audio-gateway/README.md` diagram label
 - Frontend (`adaptive-interview`):
-  - Rewrote `docs/API.md`, `docs/DATABASE.md`, `docs/SETUP.md`, `docs/ARCHITECTURE.md`, `README.md`
-  - Updated `docs/SECURITY.md`, `docs/OLLAMA.md`, `docs/COMPONENTS.md`
+  - Rewrote `docs/API.md`, `adaptive-interview-api/docs/DATABASE.md`, `docs/SETUP.md`, `docs/ARCHITECTURE.md`, `README.md`
+  - Updated `docs/SECURITY.md`, `adaptive-interview-api/docs/OLLAMA.md`, `docs/COMPONENTS.md`
   - Added path migration note and dated entry to `docs/CHANGELOG.md`
   - Updated `docs/OPENSPEC.md` archive table
 - Validation:
@@ -440,7 +471,7 @@
   - Updated UI: spinner + job ID during polling, error banner on failure, "Retry" button text
 - Documentation:
   - `docs/API.md` — updated `POST /api/sessions/:id/evaluate` to `202` response; added `GET /api/evaluations/jobs/:jobId`
-  - `docs/EVALUATION.md` — added async job flow section with diagram
+  - `adaptive-interview-api/docs/EVALUATION.md` — added async job flow section with diagram
 
 ---
 
@@ -904,7 +935,7 @@ nextExpectedIndexRef.current = 0;
   - `/positions` list page — added "Description" column with truncated text
   - `/positions/[id]/edit` — passes `jobDescription` to form
 - Documentation:
-  - Updated `docs/API.md`, `docs/DATABASE.md`, `docs/COMPONENTS.md`
+  - Updated `docs/API.md`, `adaptive-interview-api/docs/DATABASE.md`, `docs/COMPONENTS.md`
 
 **Status:** Implemented and documented.
 
@@ -940,7 +971,7 @@ nextExpectedIndexRef.current = 0;
   - Updated `DeleteButton` to support `type="campaign"`
   - Updated nav bar with "Campaigns" link
 - Documentation:
-  - Updated `docs/API.md`, `docs/DATABASE.md`, `docs/ARCHITECTURE.md`, `docs/COMPONENTS.md`
+  - Updated `docs/API.md`, `adaptive-interview-api/docs/DATABASE.md`, `docs/ARCHITECTURE.md`, `docs/COMPONENTS.md`
 
 **Status:** Implemented and documented.
 
