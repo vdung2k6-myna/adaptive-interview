@@ -2,6 +2,136 @@
 
 > **Path migration note:** During the 2026-08 backend extraction, files under `src/app/api/*`, `src/lib/db.ts`, `src/lib/schema.ts`, `src/lib/ollama.ts`, `src/lib/evaluation.ts`, `src/lib/prompts.ts`, `src/lib/embeddings.ts`, `src/lib/seed.ts`, `src/lib/mcp/*`, and most of `src/lib/audio/*` moved to the standalone [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api) repository (default branch `master`). Historical entries below still name their original monolith paths. Current frontend files live under `src/app/*`, `src/components/*`, `src/lib/api-client.ts`, `src/lib/config/*`, `src/lib/types.ts`, `src/lib/use-playback-rate.ts`, and `src/lib/audio/sentence-queue.ts`.
 
+## 2026-09-15
+
+### Sync Documentation with Current Source
+
+**Change:** `sync-docs-with-source` (OpenSpec)
+
+**Problem:** After several feature changes landed (language support, Supertonic TTS, Voice Agent page, PWA, streaming optimizations), the developer-facing reference documentation drifted from the source code. The `docs/OPENSPEC.md` active-changes table listed completed/archived work, and the root `README.md` omitted Supertonic and the Voice Agent entirely.
+
+**Solution:** Updated all affected developer docs to reflect the current state of the codebase:
+
+- **`docs/OPENSPEC.md`** — Replaced stale active-changes table with actual in-flight changes (`adaptive-mobile-ui`, `add-interview-language-and-voice-mapping`, `add-supertonic-tts-engine`, `add-voice-agent-page`, `fix-llm-repetition-tts`, `fix-sse-audio-chunk-cleanup`, `reduce-speak-first-chunk-latency`). Archived completed changes (`add-pwa-android-installability`, `add-pwa-ios-installability`, `fix-audio-streaming-stop-regressions`, `reduce-speak-first-chunk-latency`, `fix-llm-repetition-tts`, `fix-sse-audio-chunk-cleanup`, `add-interview-language-and-voice-mapping`).
+- **`README.md`** — Added Supertonic to voice engines list; added Voice Agent feature bullet; added Voice Agent to Usage Flow.
+- **`docs/COMPONENTS.md`** — Added `VoiceAgentPage` page component documentation with key state, audio pipeline, and component relationships diagram update.
+- **`docs/ARCHITECTURE.md`** — Mentioned Supertonic alongside Kokoro/Piper in the voice mode description.
+- **`docs/SETUP.md`** — Added `npm run pwa:assets` to scripts table; added Voice Agent to verification checklist.
+
+**Status:** Implemented. Build passes. No source code changes.
+
+---
+
+## 2026-09-02
+
+### Add Supertonic TTS Engine to Frontend
+
+**Change:** `add-supertonic-tts-engine` (OpenSpec)
+
+**Problem:** The backend Audio Gateway and API already supported a third TTS engine — **Supertonic** — alongside Kokoro and Piper, but the frontend still only exposed two engines in all engine-selection UI surfaces. Users could not create sessions or configure voice agents with Supertonic.
+
+**Solution:** Add `"supertonic"` as a first-class engine option in the frontend:
+
+1. **SetupForm (`/setup`)** — Added Supertonic as a third radio button; updated auto-select logic so both English and Vietnamese default to Supertonic. Changed `ttsProvider` type to `"kokoro" | "piper" | "supertonic"`.
+2. **Voice Agent page (`/voice-agent`)** — Added Supertonic to `AgentConfig.engine` type, state default, radio buttons, and display label. Changed default engine from `"piper"` to `"supertonic"`.
+3. **Responsive layout** — Engine selectors use `grid-cols-1 sm:grid-cols-3` so three buttons stack on mobile and sit in a row on desktop.
+
+**What changed:**
+- `src/app/setup/SetupForm.tsx` — added `"supertonic"` to `ttsProvider` type and default; language change handlers now default to `"supertonic"`; added third radio button with responsive grid layout.
+- `src/app/voice-agent/page.tsx` — added `"supertonic"` to `AgentConfig.engine` type and default; language change handlers now default to `"supertonic"`; added third radio button; updated chat header engine display label.
+- `docs/COMPONENTS.md` — updated SetupForm engine selector description.
+- `docs/CHANGELOG.md` — this entry.
+
+**Status:** Applied. No backend changes required — the API already accepted `"supertonic"` in all relevant routes. Build and lint pass.
+
+---
+
+## 2026-09-02
+
+### Fix SSE Audio Chunk Cleanup Race
+
+**Change:** `fix-sse-audio-chunk-cleanup` (OpenSpec)
+
+**Problem:** In the Voice Interview page (`POST /api/voice/stream`), the backend deleted temporary sentence-level audio chunk files immediately after combining them into a single WAV — before the SSE `done` event was sent. The frontend's `SentenceAudioQueue` preloads only the next chunk while the current one plays. If chunk files were deleted while the queue was still working through earlier sentences, subsequent fetches hit 404s, causing the queue to skip all remaining chunks. The user heard only the first few preloaded chunks and possibly the last one, creating the impression that "only the last audio plays."
+
+**Solution:**
+1. **Backend:** Defer cleanup of temporary chunk files until the SSE response fully closes, with a 10-second grace period so the client has time to finish fetching all chunks.
+2. **Frontend:** Clear the `streamItems` UI immediately when the SSE `done` event arrives, instead of waiting 2 seconds after the audio queue finishes.
+
+**What changed:**
+- `adaptive-interview-api/src/routes/voice.ts` — removed inline `cleanupSavedAudio(savedUrls)` before the `done` event. Added a `res.on("close", ...)` handler that schedules chunk cleanup after a 10-second delay, giving the frontend's audio queue time to finish fetching.
+- `src/app/interview/[id]/voice/page.tsx` — added `setStreamItems([])` in the SSE `done` handler. Removed the `setTimeout(() => setStreamItems([]), 2000)` from both `SentenceAudioQueue.onFinished` callbacks in `handleStartInterview` and `handleRecordingComplete`.
+
+**Status:** Fix applied. Backend build and lint pass (3 pre-existing warnings). Frontend build passes; frontend lint has a pre-existing ESLint configuration error unrelated to this change.
+
+### Fix LLM Repetition Causing Strange TTS Audio
+
+**Change:** `fix-llm-repetition-tts` (OpenSpec)
+
+**Problem:** The LLM (Ollama `llama3.1`) occasionally hallucinated stutter-like repetition in Vietnamese text, e.g. "xoay từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ từ". When this text was sent to the TTS engine (Kokoro), it produced very long, strange audio and then appeared to stop playback.
+
+**Solution:**
+1. **Backend — LLM penalty:** Added `repeat_penalty` to Ollama generation options. Voice routes (`/api/voice/*` and `/api/voice-agent/*`) now request `repeat_penalty: 1.2`, which discourages the model from repeating tokens. All other routes use the default `1.1`.
+2. **Backend — Text deduplication:** Added `deduplicateRepeatedWords()` in the TTS text-processing pipeline. Any word repeated more than twice consecutively is collapsed back to two occurrences, so even if the LLM still stutters, the TTS input is cleaned.
+
+**What changed:**
+- `adaptive-interview-api/src/lib/ollama.ts` — `OllamaGenerateOptions` now accepts `repeat_penalty?: number`. Both `generateChatResponse` and `generateChatResponseStream` pass it in the `options` body (default `1.1`).
+- `adaptive-interview-api/src/routes/voice.ts` — all LLM calls now pass `repeat_penalty: 1.2`.
+- `adaptive-interview-api/src/routes/voice-agent.ts` — all LLM calls now pass `repeat_penalty: 1.2`.
+- `adaptive-interview-api/src/lib/audio/text-processing.ts` — added `deduplicateRepeatedWords(text, maxRepeats=2)` function. Integrated into `normalizeTextForEngine` so it runs on every text path before TTS synthesis.
+
+**Status:** Fix applied. Backend build passes. Frontend build passes.
+
+---
+
+## 2026-08-28
+
+### Fix Voice Agent Streaming Sentence Stutter
+
+**Change:** `add-voice-agent-page` (OpenSpec)
+
+**Problem:** When the Voice Agent streamed a reply, the sentence splitter emitted incomplete trailing fragments as if they were finished sentences. For Vietnamese text like "Chào bạn! Rất vui được làm quen và giúp bạn học.", the user heard "Chào" first, then "Chào bạn!" again once the exclamation completed, causing a stutter. The replay button worked correctly because it synthesized the complete text in one pass.
+
+**Solution:** Only emit sentences that end with a sentence delimiter during streaming; flush the final incomplete tail once the LLM stream finishes. This aligns the Voice Agent streaming path with the existing `/api/voice/stream` implementation.
+
+**What changed:**
+- `adaptive-interview-api/src/lib/audio/split-sentences.ts` — `extractNewSentences` now filters out incomplete trailing fragments. Added `ENDS_WITH_DELIMITER` regex export for callers.
+- `adaptive-interview-api/src/lib/audio/index.ts` — re-exported `ENDS_WITH_DELIMITER`.
+- `adaptive-interview-api/src/routes/voice-agent.ts` — `flushTail` now extracts the actual final tail from `splitSentences(finalText)` instead of comparing `finalText` to `accumulatedText`. Streaming loop only emits complete sentences. Replaced the 500ms fallback wait with `Promise.all(pendingTTS)` so `done` is sent only after every sentence audio has been emitted, matching the behavior of `POST /api/voice/stream`.
+
+**What changed (continued):**
+- `adaptive-interview-api/src/lib/ollama.ts` — `generateChatResponse` and `generateChatResponseStream` now fall back to `message.thinking` when `message.content` is empty. This fixes cloud models like `kimi-k2.6:cloud` that stream their entire response into the `thinking` field and leave `content` blank.
+- `adaptive-interview-api/src/routes/voice-agent.ts` — if the LLM stream yields zero tokens, the route now falls back to `generateChatResponse` (non-streaming). `kimi-k2.6:cloud` returns empty `content` during streaming but returns the full reply in non-streaming mode. The non-streaming response is split into sentences, synthesized in parallel, and emitted via SSE.
+
+**Status:** Fix applied. Build and lint pass. Manual TTS verification pending.
+
+---
+
+## 2026-08-27
+
+### Add Voice Agent Page
+
+**Change:** `add-voice-agent-page` (OpenSpec)
+
+**Problem:** The platform only supported structured, recruiter-driven interviews. There was no lightweight way for a user to configure an AI agent persona and talk to it by voice or text.
+
+**Solution:** Add a standalone `/voice-agent` page for ephemeral voice/text conversations with a configurable agent. The page lets the user pick a language, TTS engine, and persona (or custom system prompt), then chat without creating an interview session. Conversations are not persisted and have no evaluation or turn limit.
+
+**What changed:**
+- `adaptive-interview-api/src/routes/voice-agent.ts` — new `POST /api/voice-agent/stream` endpoint. Accepts multipart form data with optional audio/text, `language`, `engine`, `systemPrompt`, and `history`. Returns SSE `user`, `sentence` (with embedded base64 `audioData`), `done`, and `error` events.
+- `adaptive-interview-api/src/lib/prompts.ts` — added `buildVoiceAgentPrompt` and `trimVoiceAgentHistory`. The prompt injects the same language rule used by interviews, and the history trimmer caps the LLM context at `VOICE_AGENT_MAX_HISTORY` exchanges (default 20).
+- `adaptive-interview-api/src/index.ts` — registered `/api/voice-agent` routes.
+- `adaptive-interview-api/.env.example` and `.env` — added `VOICE_AGENT_MAX_HISTORY=20`.
+- `src/app/voice-agent/page.tsx` — new configuration + chat page with voice/text input toggle, streaming playback, and agent message replay.
+- `src/app/voice-agent/personas.ts` — preset personas: Friendly Tutor, Interview Coach, Language Partner, Coding Assistant, Debate Partner, and Custom.
+- `src/app/voice-agent/history/page.tsx` — placeholder explaining ephemeral mode.
+- `src/app/layout.tsx` and `src/components/MobileNav.tsx` — added Voice Agent link to navigation.
+- `adaptive-interview-api/docs/API.md`, `docs/API.md`, `docs/ARCHITECTURE.md` — documented the new endpoint and flow.
+
+**Status:** Implemented and documented. Build and lint validation pass.
+
+---
+
 ## 2026-08-27
 
 ### Consolidate Backend Documentation in Backend Repository
@@ -78,7 +208,7 @@
 - `adaptive-interview-api/src/lib/config/index.ts`, `development.ts`, `production.ts` — added per-language voice map under `audio.voices`.
 - `adaptive-interview-api/src/lib/audio/text-processing.ts` — added `resolveVoice(engine, language)` helper; returns `undefined` for empty Vietnamese config so the service default is used. Added `resolveEngineForLanguage` to force English → Piper and Vietnamese → Kokoro at runtime, because the deployed models are language-specific.
 - `adaptive-interview-api/src/routes/voice.ts` — all TTS call sites (`/start`, `/turn`, `/stream`, `/speak`, `/speak-stream`) pass the resolved voice and engine. `/stream` completion message is localized.
-- `src/app/setup/SetupForm.tsx` — added English/Vietnamese language selector (visible in voice mode) and auto-switches the TTS provider when the language changes.
+- `src/app/setup/SetupForm.tsx` — added English/Vietnamese language selector (visible for both Text and Voice modes) and auto-switches the TTS provider when the language changes.
 - `src/app/interview/[id]/page.tsx`, `voice/page.tsx`, `transcript/page.tsx` — added `language` to `SessionData`; transcript Speak passes `language` to `/api/voice/speak-stream`.
 - `adaptive-interview-api/docs/API.md`, `adaptive-interview/docs/API.md`, `docs/ARCHITECTURE.md`, `docs/SETUP.md`, `adaptive-interview-api/docs/SETUP.md` — documented the new field, voice mapping, and environment variables.
 

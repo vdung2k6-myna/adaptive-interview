@@ -106,14 +106,23 @@ created: 2026-08-08
 | Change | Status | Description |
 |---|---|---|
 | `adaptive-mobile-ui` | In Progress | Make Web UI Mobile Adaptive |
-| `add-pwa-android-installability` | In Progress | Add PWA Support for Android Installability |
-| `add-pwa-ios-installability` | In Progress | Add PWA Support for iOS Installability |
-| `fix-audio-streaming-stop-regressions` | In Progress | Fix Audio Streaming Stop Regressions |
+| `add-interview-language-and-voice-mapping` | In Progress | Add Interview Language and Engine Voice Mapping |
+| `add-supertonic-tts-engine` | In Progress | Add Supertonic TTS Engine to Frontend |
+| `add-voice-agent-page` | In Progress | Add Voice Agent Page |
+| `fix-llm-repetition-tts` | In Progress | Fix LLM Repetition Causing Strange TTS Audio |
+| `fix-sse-audio-chunk-cleanup` | In Progress | Fix SSE Audio Chunk Cleanup Race |
+| `reduce-speak-first-chunk-latency` | In Progress | Reduce Speak First-Chunk Latency on Transcript Page |
+| `sync-docs-with-source` | In Progress | Sync Documentation with Current Source Code |
 
 ## Archived Changes
 
 | Date | Change | Description |
 |------|--------|-------------|
+| 2026-08-27 | `reduce-speak-first-chunk-latency` | Reduced transcript Speak latency by embedding base64 audio in SSE events |
+| 2026-08-27 | `fix-llm-repetition-tts` | Added repeat penalty and word deduplication to prevent garbled TTS |
+| 2026-08-27 | `fix-sse-audio-chunk-cleanup` | Fixed race between SSE stream close and temp audio file deletion |
+| 2026-08-27 | `add-interview-language-and-voice-mapping` | Added `language` field to sessions with per-engine voice mapping |
+| 2026-08-27 | `consolidate-docs-in-backend` | Moved all backend-specific documentation to `adaptive-interview-api` |
 | 2026-08-24 | `resync-docs-after-backend-extraction` | Resynced frontend and backend documentation after backend extraction |
 | 2026-08-22 | `consolidate-audio-services-in-backend` | Moved all audio services to backend repo |
 | 2026-08-22 | `complete-backend-extraction` | Extracted all API routes into standalone Express server |

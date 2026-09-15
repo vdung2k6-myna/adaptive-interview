@@ -65,6 +65,7 @@ The frontend's `next.config.ts` automatically proxies `/api/*` and `/audio/*` re
 7. **Verify Markdown rendering** — bold text, lists, code blocks should render correctly
 8. **Complete the interview** — after max turns, evaluation button should appear
 9. **Voice mode** (if audio stack is running in backend): verify microphone access, recording, and audio playback
+10. **Voice Agent** (`/voice-agent`): configure a persona, start a conversation, verify streaming audio playback and voice/text reply toggles
 
 ## Frontend Scripts
 
@@ -75,6 +76,7 @@ The frontend's `next.config.ts` automatically proxies `/api/*` and `/audio/*` re
 | `npm run build` | Production build (outputs `.next/standalone/`) |
 | `npm start` | Start production server from standalone bundle |
 | `npm run lint` | ESLint check |
+| `npm run pwa:assets` | Regenerate PWA icons and iOS splash screens from source |
 
 > **Tip:** To use any port: `npx next dev -p {port}`.
 

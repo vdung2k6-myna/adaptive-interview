@@ -465,6 +465,40 @@ A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mo
 
 ---
 
+### `VoiceAgentPage` (`voice-agent/page.tsx`)
+
+**Type:** Client component ("use client")
+
+**Responsibilities:**
+- Configure an ephemeral voice/text agent (persona, language, engine)
+- Start a real-time conversation with no database persistence
+- Handle first-turn agent greeting (no audio upload)
+- Support voice replies via `AudioRecorder` and text replies via input field
+- Toggle between voice and text input modes
+- Render message thread with agent/user bubbles and replay buttons
+- Manage in-memory conversation history (no backend storage)
+
+**Key State:**
+
+| State | Type | Purpose |
+|-------|------|---------|
+| `config` | `AgentConfig` | Language, engine, persona, system prompt |
+| `messages` | `AgentMessage[]` | In-memory message thread |
+| `isStarted` | `boolean` | Whether the conversation has begun |
+| `isRecording` | `boolean` | Whether the user is currently recording voice |
+| `isProcessing` | `boolean` | Whether STT/LLM/TTS is in progress |
+| `inputMode` | `"voice" \| "text"` | Current input modality |
+
+**Audio Pipeline:**
+- Reuses `SentenceAudioQueue` for streaming playback of agent responses
+- Voice replies use multipart POST to `/api/voice-agent/stream`
+- Text replies use multipart POST with `text` field instead of `audio`
+- Replay uses existing `/api/voice/speak-stream` with `{ text, engine, language }`
+
+**Note:** No database tables are involved. Conversation state lives only in browser memory and is lost on page refresh. A "New conversation" button resets all ephemeral state.
+
+---
+
 ### `ComparePage` (`compare/page.tsx`)
 
 **Type:** Client component with `Suspense`
@@ -488,13 +522,16 @@ A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mo
 **Responsibilities:**
 - Receive positions and candidates from parent Client Component page (loaded via `apiFetch()`)
 - Dropdown selection for position + candidate
+- Interview mode toggle (Text / Voice)
+- Interview language selector (English / Vietnamese), visible for both Text and Voice modes
+- Voice-engine toggle shown only when Voice mode is selected (Kokoro / Piper / Supertonic)
 - Create interview session on submit via `apiFetch()`
 - Redirect to `/interview/{id}`
 
 **Mobile:**
 - Parent page padding is `p-4 md:p-8`
 - Form card padding is `p-4 md:p-6` with reduced top margin on small screens
-- Selects, mode/voice engine toggles, submit button, and URL copy controls use `text-base` / `min-h-[44px]`
+- Selects, mode/language/voice engine toggles, submit button, and URL copy controls use `text-base` / `min-h-[44px]`
 
 ### `PositionForm` (`positions/new/PositionForm.tsx`)
 
@@ -649,6 +686,9 @@ RootLayout
     │   ├── ScoreInput (human calibration)
     │   ├── ModelBadge
     │   └── VersionHistory
+    ├── VoiceAgentPage
+    │   ├── AudioRecorder (voice input)
+    │   └── SentenceAudioQueue (streaming playback)
     ├── ComparePage
     ├── SetupPage
     ├── PositionForm

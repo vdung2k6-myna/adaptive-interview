@@ -49,7 +49,7 @@ Interviews are structured as turn-based sessions with a configurable maximum (de
 
 The session automatically completes when `currentTurn >= maxTurns`.
 
-Sessions have a `mode` field: `"text"` (default) or `"voice"`. Voice mode relies on the backend's audio pipeline; the frontend only communicates with the backend Express server.
+Sessions have a `mode` field: `"text"` (default) or `"voice"`. Voice mode relies on the backend's audio pipeline (Kokoro, Piper, or Supertonic TTS engine); the frontend only communicates with the backend Express server.
 
 ### 2. Streaming Architecture
 
@@ -175,6 +175,35 @@ Client reads SSE events:
 
 See the backend architecture doc for the server-side voice pipeline details.
 
+## Data Flow: Voice Agent
+
+The Voice Agent is an ephemeral, non-persisted voice/text chat that reuses the same streaming audio pipeline as voice interviews but with a generic system prompt.
+
+```
+User configures agent on /voice-agent
+    │
+    ▼
+POST /api/voice-agent/stream
+  multipart: { language, engine, systemPrompt, history, audio|text }
+    │
+    ▼
+Backend:
+  STT audio → user text (or accept text field)
+  Trim history to VOICE_AGENT_MAX_HISTORY
+  Build LLM prompt: systemPrompt + language rule + history
+  Stream LLM response
+  Per sentence: strip markdown, TTS via resolveVoice(engine, language)
+  SSE events: user, sentence, done
+    │
+    ▼
+Frontend:
+  SentenceAudioQueue plays each sentence
+  Message thread shows agent/user bubbles
+  User replies by voice (AudioRecorder) or text input
+```
+
+No database tables are involved; conversation state lives only in browser memory.
+
 ## File Organization
 
 ### Frontend (This Repository)
@@ -197,6 +226,10 @@ src/
 │   ├── campaigns/new/            # Campaign creation form (Client Component)
 │   ├── campaigns/[id]/           # Campaign detail + report (Client Component)
 │   ├── setup/                    # Interview setup (Client Component)
+│   ├── voice-agent/              # Ephemeral voice/text agent chat (Client Components)
+│   │   ├── page.tsx                # Agent configuration + chat
+│   │   ├── personas.ts             # Preset agent personas
+│   │   └── history/                # Placeholder for saved history
 │   ├── error.tsx                 # Global error boundary
 │   ├── globals.css               # Global styles + Markdown theme
 │   ├── layout.tsx                # Root layout with nav + fonts + PWA registration

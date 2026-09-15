@@ -23,9 +23,10 @@ This repository contains the **Next.js frontend**. The API backend lives in the 
 - **Anonymous Session Links** — Share an interview via a unique UUID URL. Copy link buttons on Dashboard and Transcript pages
 - **Position & Candidate Management** — Create, list, edit, and delete positions and candidates (edit/delete blocked if the entity is already in use by a session)
 - **Recruiting Campaigns** — Group positions into campaigns with aggregated metrics: sessions, completion rate, score averages, recommendation distribution, and top candidates
-- **Voice Interviews** — Optional turn-based voice mode: candidates record answers via microphone; the backend transcribes via audio.cpp (STT) and speaks back via TTS. Supports **Kokoro** (default) and **Piper**
+- **Voice Interviews** — Optional turn-based voice mode: candidates record answers via microphone; the backend transcribes via audio.cpp (STT) and speaks back via TTS. Supports **Kokoro** (default), **Piper**, and **Supertonic**
 - **Interview Language** — Each session runs in `english` or `vietnamese`; the backend adjusts prompts and TTS voice selection accordingly
 - **Mobile-First Responsive UI** — All admin, setup, and interview pages adapt down to 375px wide. Tables become card lists on phones, touch targets are ≥44×44px, and form inputs use `text-base` to prevent iOS Safari auto-zoom
+- **Voice Agent** — Ephemeral voice/text agent chat at `/voice-agent`. Configure a persona, language, and engine, then hold a real-time voice or text conversation with no database persistence
 - **PWA Installability (Android + iOS)** — Add-to-home-screen support with a Web App Manifest, service worker, offline fallback, Apple touch icons, startup splash images, and standalone display mode for chromeless voice interviews
 
 ---
@@ -199,6 +200,7 @@ Both the backend (port 4000) and frontend (port 3000) must be running.
 1. **Interview** (`/interview/[id]`) — AI generates the first question immediately, streamed word-by-word
 2. **Answer** — type a response, AI generates the next context-aware follow-up
 3. **Completion** — after max turns (default 8), the interview ends and evaluation becomes available
+4. **Voice Agent** (`/voice-agent`) — ephemeral voice/text chat with a configurable AI persona, no database persistence
 
 ---
 
