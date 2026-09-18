@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 
 const STORAGE_KEY = "adaptive-interview-playback-rate";
-const DEFAULT_PLAYBACK_RATE = 1.0;
+const DEFAULT_PLAYBACK_RATE = 1.25;
 const VALID_RATES = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
 function isValidRate(value: number): boolean {

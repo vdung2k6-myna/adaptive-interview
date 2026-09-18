@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 
 interface ScoreInputProps {
   label: string;
@@ -15,6 +16,7 @@ export const ScoreInput = React.memo(function ScoreInput({
   onChange,
   disabled = false,
 }: ScoreInputProps) {
+  const tCommon = useTranslations("common");
   const [hovered, setHovered] = useState(0);
 
   const handleClick = useCallback(
@@ -44,13 +46,13 @@ export const ScoreInput = React.memo(function ScoreInput({
                 ? "text-yellow-500"
                 : "text-zinc-300 dark:text-zinc-600"
             } ${disabled ? "cursor-default" : "cursor-pointer hover:scale-110"}`}
-            aria-label={`Score ${n}`}
+            aria-label={`${tCommon("score")} ${n}`}
           >
             ★
           </button>
         ))}
         <span className="ml-2 text-sm text-zinc-700 dark:text-zinc-300 min-w-[2ch]">
-          {value ?? "—"}/5
+          {value ?? tCommon("notAvailable")}/5
         </span>
       </div>
     </div>

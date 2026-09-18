@@ -121,6 +121,72 @@ iOS Safari does not use `manifest.json` for standalone launch. Instead it relies
 
 iOS users install via **Safari Share → Add to Home Screen**. Standalone iOS Web Apps share the same service worker and offline fallback as Android, but microphone permission behavior for voice interviews must be validated on a real device.
 
+---
+
+## Internationalization (i18n)
+
+The frontend supports two UI languages: **English** and **Vietnamese**. This is separate from the interview language (which controls the AI question language via the backend).
+
+### Routing
+
+```
+/en/*     → English UI (default)
+/vi/*     → Vietnamese UI
+/*        → Middleware redirects to /en/* (default locale)
+```
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `src/i18n/routing.ts` | `defineRouting({ locales: ["en", "vi"], defaultLocale: "en" })` |
+| `src/i18n/request.ts` | Per-request message loader (`getRequestConfig`) |
+| `src/i18n/navigation.ts` | Locale-aware `Link`, `useRouter`, `redirect`, `usePathname` |
+| `src/middleware.ts` | `createMiddleware(routing)` — handles locale prefixing and redirect |
+| `messages/en.json` | English translation dictionaries |
+| `messages/vi.json` | Vietnamese translation dictionaries |
+
+### Locale-Aware Navigation
+
+All internal navigation uses `@/i18n/navigation` instead of `next/link` or `next/navigation`:
+
+```tsx
+import { Link, useRouter } from "@/i18n/navigation";
+
+// Client-side link — automatically prefixed with current locale
+<Link href="/dashboard">Dashboard</Link>
+
+// Programmatic navigation — preserves locale
+const router = useRouter();
+router.push("/setup");
+```
+
+### Translation Patterns
+
+**Server components** (async) use `getTranslations`:
+
+```tsx
+import { getTranslations } from "next-intl/server";
+
+const t = await getTranslations("dashboard");
+<h1>{t("title")}</h1>
+```
+
+**Client components** use `useTranslations`:
+
+```tsx
+import { useTranslations } from "next-intl";
+
+const t = useTranslations("dashboard");
+<h1>{t("title")}</h1>
+```
+
+### Language Switcher
+
+`LanguageSwitcher.tsx` renders EN/VI segmented buttons in the nav bar. It rewrites the first URL segment to switch locale while keeping the current page path intact.
+
+---
+
 ## Data Flow: Interview Session
 
 ```
@@ -180,7 +246,14 @@ See the backend architecture doc for the server-side voice pipeline details.
 The Voice Agent is an ephemeral, non-persisted voice/text chat that reuses the same streaming audio pipeline as voice interviews but with a generic system prompt.
 
 ```
-User configures agent on /voice-agent
+User opens /voice-agent
+    │
+    ├──► URL params ?persona=&lang=&engine= ──► validate against PERSONAS
+    ├──► localStorage "voiceAgentConfig" ──► fallback if no URL params
+    └──► Defaults (friendly-partner, english, supertonic)
+    │
+    ▼
+Auto-start: startConversation() fires when page is visible
     │
     ▼
 POST /api/voice-agent/stream
@@ -200,6 +273,7 @@ Frontend:
   SentenceAudioQueue plays each sentence
   Message thread shows agent/user bubbles
   User replies by voice (AudioRecorder) or text input
+  Config saved to localStorage on explicit "Start Conversation"
 ```
 
 No database tables are involved; conversation state lives only in browser memory.

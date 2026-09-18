@@ -495,6 +495,14 @@ A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mo
 - Text replies use multipart POST with `text` field instead of `audio`
 - Replay uses existing `/api/voice/speak-stream` with `{ text, engine, language }`
 
+**Auto-Start Behavior:**
+- Config is resolved on mount from URL query params (`?persona=&lang=&engine=`), then `localStorage`, then defaults
+- When valid config is present, `startConversation()` is called automatically
+- Guarded by `hasAttemptedAutoStartRef` to prevent double-fire in React Strict Mode
+- Tab visibility check ensures auto-start only fires when the page is visible
+- If auto-start fails (e.g., no network), the config screen appears with a helpful message
+- Config is persisted to `localStorage` on every explicit "Start Conversation"
+
 **Note:** No database tables are involved. Conversation state lives only in browser memory and is lost on page refresh. A "New conversation" button resets all ephemeral state.
 
 ---
@@ -648,6 +656,79 @@ function Player() {
 
 ---
 
+### `LanguageSwitcher`
+
+**Location:** `src/components/LanguageSwitcher.tsx`
+
+**Type:** Client component ("use client")
+
+**Responsibilities:**
+- Display EN/VI toggle buttons in the nav bar
+- Detect current locale from `window.location.pathname`
+- Switch locale by rewriting the first path segment (e.g. `/en/dashboard` → `/vi/dashboard`)
+- Visual active state for the current locale
+
+**Features:**
+- Compact segmented button style with rounded inner pills
+- Uses `next/navigation` `useRouter` and `usePathname` for locale-aware transitions
+- Preserves the current page when switching languages (e.g. stays on `/setup`)
+- `aria-label` on each button for screen readers
+
+**Usage:**
+
+```tsx
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+
+// Inside layout header
+<LanguageSwitcher />
+```
+
+---
+
+### `NextIntlClientProvider`
+
+**Location:** Provided by `next-intl`; consumed in `src/app/[locale]/layout.tsx`
+
+**Type:** Server + Client boundary
+
+**Responsibilities:**
+- Load translation messages for the current locale on the server (`getMessages()`)
+- Pass messages and locale to the client-side React tree
+- Enable `useTranslations()` and `useFormatter()` hooks in all child components
+
+**Usage:**
+
+```tsx
+import { NextIntlClientProvider } from "next-intl";
+import { getMessages } from "next-intl/server";
+
+// In server layout
+const messages = await getMessages();
+return (
+  <NextIntlClientProvider messages={messages} locale={locale}>
+    {children}
+  </NextIntlClientProvider>
+);
+```
+
+**Translation namespaces:**
+Messages are organized by feature in `messages/{locale}.json`:
+- `nav` — Navigation labels
+- `dashboard` — Dashboard page
+- `setup` — Interview setup form
+- `interview` — Live chat interview
+- `transcript` — Transcript + evaluation page
+- `voice` — Voice interview UI
+- `candidates` — Candidate list + forms
+- `positions` — Position list + forms
+- `campaigns` — Campaign list + forms
+- `voiceAgent` — Voice Agent page
+- `compare` — Candidate comparison
+- `common` — Shared actions (save, cancel, delete, etc.)
+- `errors` — Error messages
+
+---
+
 ## Layout Components
 
 ### `RootLayout` (`layout.tsx`)
@@ -660,6 +741,7 @@ function Player() {
 - Dark mode support via Tailwind `dark:` classes
 - Metadata (title, description)
 - Registers the PWA service worker on the client
+- Wraps children with `NextIntlClientProvider` for locale-aware rendering
 
 **Responsive behavior:**
 - Desktop (`md:` and up): horizontal link list (`hidden md:flex`)

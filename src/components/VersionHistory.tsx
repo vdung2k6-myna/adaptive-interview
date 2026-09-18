@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useTranslations } from "next-intl";
 import { ModelBadge } from "./ModelBadge";
 
 interface Version {
@@ -23,12 +24,14 @@ export const VersionHistory = React.memo(function VersionHistory({
   onSelect,
   onDelete,
 }: VersionHistoryProps) {
+  const t = useTranslations("transcript");
+
   if (versions.length <= 1) return null;
 
   return (
     <div className="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
       <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-        Version History
+        {t("versionHistory")}
       </p>
       <ul className="space-y-1.5">
         {versions.map((v) => {
@@ -54,12 +57,12 @@ export const VersionHistory = React.memo(function VersionHistory({
                 </span>
                 {v.humanCalibrated && (
                   <span className="text-xs text-emerald-600 dark:text-emerald-400">
-                    Calibrated
+                    {t("calibrated")}
                   </span>
                 )}
                 {isCurrent && (
                   <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                    Current
+                    {t("current")}
                   </span>
                 )}
               </button>
@@ -68,7 +71,7 @@ export const VersionHistory = React.memo(function VersionHistory({
                   type="button"
                   onClick={() => onDelete(v.id)}
                   className="flex h-10 w-10 items-center justify-center text-lg text-zinc-400 hover:text-red-600 dark:text-zinc-500 dark:hover:text-red-400"
-                  title="Delete this version"
+                  title={t("deleteVersion")}
                 >
                   ×
                 </button>

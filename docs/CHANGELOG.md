@@ -2,6 +2,99 @@
 
 > **Path migration note:** During the 2026-08 backend extraction, files under `src/app/api/*`, `src/lib/db.ts`, `src/lib/schema.ts`, `src/lib/ollama.ts`, `src/lib/evaluation.ts`, `src/lib/prompts.ts`, `src/lib/embeddings.ts`, `src/lib/seed.ts`, `src/lib/mcp/*`, and most of `src/lib/audio/*` moved to the standalone [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api) repository (default branch `master`). Historical entries below still name their original monolith paths. Current frontend files live under `src/app/*`, `src/components/*`, `src/lib/api-client.ts`, `src/lib/config/*`, `src/lib/types.ts`, `src/lib/use-playback-rate.ts`, and `src/lib/audio/sentence-queue.ts`.
 
+## 2026-09-17
+
+### Auto-Start Voice Agent
+
+**Change:** `auto-start-voice-agent` (OpenSpec)
+
+**Problem:** The `/voice-agent` page required five user interactions (language, engine, persona, prompt, start button) before a conversation began. For a PWA intended to feel like a voice assistant, this friction defeated the purpose.
+
+**Solution:** Enable automatic conversation start by combining URL deep-linking, `localStorage` persistence, and mount-time auto-start with guard conditions.
+
+**What changed:**
+
+1. **Config Resolution**
+   - Added `useSearchParams()` to read `?persona=&lang=&engine=` query params
+   - Validates URL params against `PERSONAS` array; invalid values fall back to defaults
+   - Falls back to `localStorage.getItem("voiceAgentConfig")` when no URL params are present
+   - Defaults: `friendly-partner`, `english`, `supertonic`
+
+2. **Auto-Start Logic**
+   - `useEffect` resolves config on mount and sets form state
+   - Second `useEffect` fires when `isResolvingConfig` becomes `false`
+   - Guarded by `hasAttemptedAutoStartRef` to prevent double-fire in React Strict Mode
+   - Tab visibility check (`document.visibilityState === "visible"`) ensures auto-start only fires when the page is active
+
+3. **Persistence**
+   - `startConversation()` saves `{ personaId, language, engine }` to `localStorage` on every explicit start
+   - Config survives across browser sessions and PWA launches
+
+4. **Error Handling**
+   - If auto-start fails (e.g., network error), config screen appears with an amber notice: "Could not auto-start the conversation. Tap Start Conversation below to begin manually."
+   - `autoStartFailed` state resets on successful manual start
+
+5. **Translations**
+   - Added `autoStartFailed` and `autoStartFailedHint` keys to `messages/en.json` and `messages/vi.json`
+
+6. **PWA Manifest**
+   - Changed `public/manifest.json` `start_url` from `/dashboard` to `/voice-agent`
+   - Tapping the PWA home-screen icon now launches directly into the voice agent (which auto-starts the conversation)
+
+---
+
+## 2026-09-16
+
+### Add Multi-Language UI Support (English + Vietnamese)
+
+**Change:** `add-multi-language-ui` (OpenSpec)
+
+**Problem:** The frontend UI was entirely in English. Users who configured Vietnamese interview language still saw English labels, buttons, and navigation. A separate UI language layer was needed so users could view the dashboard, setup forms, transcripts, and evaluation screens in their preferred language.
+
+**Solution:** Integrate `next-intl` v4 with locale-prefixed routing (`/en/*`, `/vi/*`) and extract all hardcoded UI strings into namespaced translation dictionaries.
+
+**What changed:**
+
+1. **Routing & Middleware**
+   - Created `src/i18n/routing.ts` with `locales: ["en", "vi"]` and `defaultLocale: "en"`
+   - Created `src/i18n/request.ts` for per-request message loading
+   - Created `src/i18n/navigation.ts` exporting locale-aware `Link`, `useRouter`, `redirect`, `usePathname`
+   - Created `src/middleware.ts` with `createMiddleware(routing)` for automatic locale prefixing
+   - Moved all pages from `src/app/*` to `src/app/[locale]/*`
+
+2. **Translation Dictionaries**
+   - Added `messages/en.json` and `messages/vi.json` with 13 namespaces:
+     `nav`, `dashboard`, `setup`, `interview`, `transcript`, `voice`, `candidates`, `positions`, `campaigns`, `voiceAgent`, `compare`, `common`, `errors`
+   - Keys cover titles, labels, buttons, placeholders, error messages, status badges, table headers, and aria labels
+
+3. **Component Localization**
+   - `layout.tsx` + `MobileNav.tsx` — nav labels via `useTranslations("nav")`
+   - `dashboard/page.tsx` — stats, filters, table headers, actions
+   - `setup/page.tsx` + `SetupForm.tsx` — form labels, mode/language/engine selectors, errors
+   - `interview/[id]/page.tsx` — chat header, turn counter, placeholder, send button, completion message
+   - `interview/[id]/transcript/page.tsx` — evaluation labels, score dimensions, version history, model selector
+   - `interview/[id]/voice/page.tsx` — processing steps, recording labels, completion link
+   - `candidates/page.tsx` + `CandidateForm.tsx` + `candidates/[id]/edit/page.tsx` — list and form strings
+   - `positions/page.tsx` + `PositionForm.tsx` + `positions/[id]/edit/page.tsx` — list and form strings
+   - `campaigns/page.tsx` + `CampaignForm.tsx` + `campaigns/[id]/page.tsx` — list, form, and detail strings
+   - `voice-agent/page.tsx` + `voice-agent/history/page.tsx` — config and chat labels
+   - `compare/page.tsx` — comparison table headers and metrics
+   - `DeleteButton.tsx`, `AudioRecorder.tsx`, `AudioPlayer.tsx`, `ScoreInput.tsx`, `VersionHistory.tsx` — shared component strings
+
+4. **Language Switcher**
+   - `LanguageSwitcher.tsx` with EN/VI segmented buttons
+   - Integrated into `layout.tsx` nav bar
+   - Preserves current page path when switching languages
+
+5. **Locale-Aware Links**
+   - Replaced all `import Link from "next/link"` with `import { Link } from "@/i18n/navigation"`
+   - Replaced `useRouter` from `next/navigation` with `@/i18n/navigation` in forms that call `router.push()`
+   - Replaced plain `<a>` tags with `<Link>` in forms and setup page
+
+**Status:** Applied. Build passes. Lint has pre-existing ESLint plugin compatibility issue unrelated to this change.
+
+---
+
 ## 2026-09-15
 
 ### Sync Documentation with Current Source

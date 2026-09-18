@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { apiFetch } from "@/lib/api-client";
 
 interface DeleteButtonProps {
@@ -12,10 +13,12 @@ interface DeleteButtonProps {
 
 export default function DeleteButton({ id, type, onDelete }: DeleteButtonProps) {
   const router = useRouter();
+  const tCommon = useTranslations("common");
+  const tErrors = useTranslations("errors");
   const [deleting, setDeleting] = useState(false);
 
   async function handleDelete() {
-    if (!confirm(`Are you sure you want to delete this ${type}?`)) return;
+    if (!confirm(tErrors("confirmDelete", { type }))) return;
     setDeleting(true);
 
     try {
@@ -30,13 +33,13 @@ export default function DeleteButton({ id, type, onDelete }: DeleteButtonProps) 
       const res = await apiFetch(endpoint, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "Failed to delete");
+        alert(data.error || tCommon("unknown"));
         return;
       }
       onDelete?.();
       router.refresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete");
+      alert(err instanceof Error ? err.message : tCommon("unknown"));
     } finally {
       setDeleting(false);
     }
@@ -48,7 +51,7 @@ export default function DeleteButton({ id, type, onDelete }: DeleteButtonProps) 
       disabled={deleting}
       className="min-h-[44px] px-2 text-sm text-red-600 underline hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
     >
-      {deleting ? "Deleting..." : "Delete"}
+      {deleting ? tCommon("deleting") : tCommon("delete")}
     </button>
   );
 }

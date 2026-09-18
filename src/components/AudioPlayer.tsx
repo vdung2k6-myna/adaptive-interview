@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 
 interface AudioPlayerProps {
@@ -10,6 +11,7 @@ interface AudioPlayerProps {
 }
 
 export default function AudioPlayer({ audioUrl, transcript, role = "interviewer" }: AudioPlayerProps) {
+  const t = useTranslations("voice");
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -113,7 +115,7 @@ export default function AudioPlayer({ audioUrl, transcript, role = "interviewer"
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const label = role === "interviewer" ? "🤖 Interviewer" : "👤 You";
+  const label = role === "interviewer" ? t("interviewerLabel") : t("youLabel");
   const borderColor = role === "interviewer"
     ? "border-zinc-200 dark:border-zinc-700"
     : "border-zinc-900 dark:border-zinc-500";
@@ -123,7 +125,7 @@ export default function AudioPlayer({ audioUrl, transcript, role = "interviewer"
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{label}</span>
         {audioUrl === "" && (
-          <span className="text-xs text-amber-600 dark:text-amber-400">Audio unavailable</span>
+          <span className="text-xs text-amber-600 dark:text-amber-400">{t("audioUnavailable")}</span>
         )}
       </div>
 
@@ -167,7 +169,7 @@ export default function AudioPlayer({ audioUrl, transcript, role = "interviewer"
         onClick={() => setShowTranscript((s) => !s)}
         className="mt-3 text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
       >
-        {showTranscript ? "Hide transcript ▲" : "Show transcript ▼"}
+        {showTranscript ? `${t("hideTranscript")} ▲` : `${t("showTranscript")} ▼`}
       </button>
 
       {showTranscript && (

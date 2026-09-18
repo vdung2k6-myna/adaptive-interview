@@ -40,6 +40,7 @@ See the backend documentation for the complete REST API:
 | Messages | `/api/messages` | Streaming interview chat |
 | Evaluations | `/api/evaluations/*`, `/api/sessions/:id/evaluate` | AI scoring + calibration |
 | Voice | `/api/voice/*` | Voice interview + TTS |
+| Voice Agent | `/api/voice-agent/stream` | Ephemeral voice/text agent chat |
 | MCP | `/api/mcp` | MCP analytics SSE |
 | Audio | `/audio/*` | Static audio file serving |
 

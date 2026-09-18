@@ -12,7 +12,7 @@
  * gets a fresh cache name and old service workers are replaced quickly.
  */
 
-const CACHE_VERSION = "__BUILD_ID__";
+const CACHE_VERSION = "__BUILD_ID__" === "__BUILD_ID__" ? `dev-${Date.now()}` : "__BUILD_ID__";
 const SHELL_CACHE = `shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `assets-${CACHE_VERSION}`;
 
@@ -60,6 +60,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Bypass range requests — the Cache API cannot store 206 Partial Content responses.
+  // Browsers send Range headers for media (audio, video) and some fonts.
+  if (request.headers.has("range")) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
   // API calls must always hit the network
   if (API_PATTERN.test(url.pathname)) {
     event.respondWith(fetch(request));
@@ -75,9 +82,12 @@ self.addEventListener("fetch", (event) => {
         }
         return fetch(request)
           .then((response) => {
-            if (response.ok) {
+            if (response.status === 200) {
               const clone = response.clone();
-              caches.open(ASSET_CACHE).then((cache) => cache.put(request, clone));
+              caches
+                .open(ASSET_CACHE)
+                .then((cache) => cache.put(request, clone))
+                .catch(() => {});
             }
             return response;
           })
@@ -92,9 +102,12 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response.ok) {
+          if (response.status === 200) {
             const clone = response.clone();
-            caches.open(SHELL_CACHE).then((cache) => cache.put(request, clone));
+            caches
+              .open(SHELL_CACHE)
+              .then((cache) => cache.put(request, clone))
+              .catch(() => {});
           }
           return response;
         })
@@ -124,9 +137,12 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(request)
       .then((response) => {
-        if (response.ok) {
+        if (response.status === 200) {
           const clone = response.clone();
-          caches.open(ASSET_CACHE).then((cache) => cache.put(request, clone));
+          caches
+            .open(ASSET_CACHE)
+            .then((cache) => cache.put(request, clone))
+            .catch(() => {});
         }
         return response;
       })

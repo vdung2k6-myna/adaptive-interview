@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
+import { useTranslations } from "next-intl";
 
 interface AudioRecorderProps {
   onRecordingComplete: (blob: Blob, durationMs: number) => void;
@@ -89,6 +90,7 @@ function writeString(view: DataView, offset: number, string: string) {
 }
 
 export default function AudioRecorder({ onRecordingComplete, onUserGesture, disabled }: AudioRecorderProps) {
+  const t = useTranslations("voice");
   const [state, setState] = useState<RecorderState>("idle");
   const [durationMs, setDurationMs] = useState(0);
   const [waveform, setWaveform] = useState<number[]>(new Array(40).fill(0));
@@ -204,7 +206,7 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
       draw();
     } catch (err) {
       console.error("Failed to start recording:", err);
-      alert("Could not access microphone. Please check permissions.");
+      alert(t("microphoneError"));
     }
   };
 
@@ -243,10 +245,10 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
         >
           <div className="mb-2 text-4xl">🎙️</div>
           <p className="text-base font-medium text-zinc-700 dark:text-zinc-300">
-            Tap to start recording
+            {t("tapToRecord")}
           </p>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Speak clearly and concisely
+            {t("speakClearly")}
           </p>
         </button>
       )}
@@ -275,7 +277,7 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
               onClick={stopRecording}
               className="min-h-[44px] rounded-full bg-red-600 px-6 py-2 text-base font-medium text-white hover:bg-red-700"
             >
-              ⏹ Stop
+              ⏹ {t("stop")}
             </button>
           </div>
         </div>
@@ -289,13 +291,13 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-50" />
               </div>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Converting to WAV...
+                {t("convertingWav")}
               </p>
             </>
           ) : (
             <>
               <p className="mb-2 text-sm text-zinc-600 dark:text-zinc-400">
-                Recording complete ({formatTime(durationMs)})
+                {t("recordingComplete", { time: formatTime(durationMs) })}
               </p>
               <div className="flex flex-wrap justify-center gap-3">
                 <button
@@ -317,13 +319,13 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
                   }}
                   className="min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-base font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
-                  ✓ Submit Answer
+                  ✓ {t("submitAnswer")}
                 </button>
                 <button
                   onClick={discardRecording}
                   className="min-h-[44px] rounded-lg border border-zinc-300 px-4 py-2 text-base font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
                 >
-                  🗑️ Discard
+                  🗑️ {t("discard")}
                 </button>
               </div>
             </>

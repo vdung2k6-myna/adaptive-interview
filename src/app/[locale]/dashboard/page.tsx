@@ -1,0 +1,375 @@
+"use client";
+
+import { useState, useEffect, useMemo } from "react";
+import { Link } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
+import { apiFetch } from "@/lib/api-client";
+
+interface Session {
+  id: string;
+  status: string;
+  mode: string;
+  maxTurns: number;
+  currentTurn: number;
+  createdAt: string;
+  completedAt: string | null;
+  candidate: { id: string; name: string; email: string } | null;
+  position: { id: string; title: string; level: string } | null;
+  evaluation: {
+    overallScore: number | null;
+    humanOverallScore: number | null;
+    recommendation: string | null;
+    humanCalibrated: boolean;
+  } | null;
+}
+
+export default function DashboardPage() {
+  const t = useTranslations("dashboard");
+  const tTranscript = useTranslations("transcript");
+  const tCommon = useTranslations("common");
+
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchSessions();
+  }, []);
+
+  async function fetchSessions() {
+    try {
+      const res = await apiFetch("/api/sessions");
+      if (!res.ok) throw new Error(t("failedLoad"));
+      const data: Session[] = await res.json();
+      setSessions(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : tCommon("unknown"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const filteredSessions = useMemo(() => {
+    return sessions.filter((s) => {
+      const matchesStatus = !statusFilter || s.status === statusFilter;
+      const matchesSearch =
+        !searchQuery ||
+        s.candidate?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.candidate?.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.position?.title.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesStatus && matchesSearch;
+    });
+  }, [sessions, statusFilter, searchQuery]);
+
+  const stats = useMemo(() => {
+    const total = sessions.length;
+    const active = sessions.filter((s) => s.status === "in_progress").length;
+    const complete = sessions.filter((s) => s.status === "completed").length;
+    const scoredSessions = sessions.filter((s) => s.evaluation?.overallScore !== null);
+    const avgScore =
+      scoredSessions.length > 0
+        ? Math.round(
+            (scoredSessions.reduce((sum, s) => sum + (s.evaluation?.overallScore || 0), 0) /
+              scoredSessions.length) *
+              10
+          ) / 10
+        : null;
+    return { total, active, complete, avgScore };
+  }, [sessions]);
+
+  function statusBadge(status: string) {
+    const classes: Record<string, string> = {
+      created: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+      in_progress: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200",
+      completed: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200",
+    };
+    const labels: Record<string, string> = {
+      created: t("statusCreated"),
+      in_progress: t("statusInProgress"),
+      completed: t("completed"),
+    };
+    return (
+      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${classes[status] || classes.created}`}>
+        {labels[status] || status}
+      </span>
+    );
+  }
+
+  function modeBadge(mode: string) {
+    const classes: Record<string, string> = {
+      text: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+      voice: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200",
+    };
+    return (
+      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${classes[mode] || classes.text}`}>
+        {mode === "voice" ? t("modeVoice") : t("modeText")}
+      </span>
+    );
+  }
+
+  async function copyInterviewLink(sessionId: string) {
+    const url = `${window.location.origin}/interview/${sessionId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(sessionId);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = url;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      setCopiedId(sessionId);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
+  }
+
+  function recommendationBadge(rec: string | null) {
+    if (!rec) return <span className="text-zinc-400">{tCommon("notAvailable")}</span>;
+    const colors: Record<string, string> = {
+      strong_yes: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+      yes: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
+      maybe: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+      no: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+      strong_no: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+    };
+    const labels: Record<string, string> = {
+      strong_yes: tTranscript("strongYes"),
+      yes: tTranscript("yes"),
+      maybe: tTranscript("maybe"),
+      no: tTranscript("no"),
+      strong_no: tTranscript("strongNo"),
+    };
+    return (
+      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${colors[rec] || colors.maybe}`}>
+        {labels[rec] || rec}
+      </span>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
+        <p className="text-zinc-600 dark:text-zinc-400">{t("loading")}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-zinc-50 p-4 dark:bg-zinc-950 md:p-6">
+      <div className="mx-auto max-w-5xl">
+        <h1 className="mb-6 text-xl font-semibold text-zinc-900 dark:text-zinc-50 sm:text-2xl">
+          {t("title")}
+        </h1>
+
+        {error && <p className="mb-4 text-red-600 dark:text-red-400">{error}</p>}
+
+        {/* Stats Cards */}
+        <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { label: t("totalSessions"), value: stats.total },
+            { label: t("active"), value: stats.active },
+            { label: t("completed"), value: stats.complete },
+            { label: t("avgScore"), value: stats.avgScore ?? tCommon("notAvailable") },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+            >
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">{stat.label}</p>
+              <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{stat.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Filters */}
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="min-h-[44px] rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          >
+            <option value="">{t("allStatuses")}</option>
+            <option value="created">{t("statusCreated")}</option>
+            <option value="in_progress">{t("statusInProgress")}</option>
+            <option value="completed">{t("completed")}</option>
+          </select>
+          <input
+            type="text"
+            placeholder={t("searchPlaceholder")}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="min-h-[44px] flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+          />
+        </div>
+
+        {/* Desktop Table */}
+        <div className="hidden overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 md:block">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 dark:bg-zinc-800">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium text-zinc-700 dark:text-zinc-300">{t("candidate")}</th>
+                <th className="px-4 py-3 text-left font-medium text-zinc-700 dark:text-zinc-300">{t("position")}</th>
+                <th className="px-4 py-3 text-left font-medium text-zinc-700 dark:text-zinc-300">{t("status")}</th>
+                <th className="px-4 py-3 text-left font-medium text-zinc-700 dark:text-zinc-300">{t("turns")}</th>
+                <th className="px-4 py-3 text-left font-medium text-zinc-700 dark:text-zinc-300">{t("score")}</th>
+                <th className="px-4 py-3 text-left font-medium text-zinc-700 dark:text-zinc-300">{t("recommendation")}</th>
+                <th className="px-4 py-3 text-right font-medium text-zinc-700 dark:text-zinc-300">{t("actions")}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              {filteredSessions.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
+                    {t("noSessions")}
+                  </td>
+                </tr>
+              ) : (
+                filteredSessions.map((s) => (
+                  <tr key={s.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-zinc-900 dark:text-zinc-50">{s.candidate?.name || tCommon("unknown")}</div>
+                      <div className="text-xs text-zinc-500 dark:text-zinc-400">{s.candidate?.email}</div>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">
+                      {s.position?.title || tCommon("unknown")} — {s.position?.level}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {statusBadge(s.status)}
+                        {modeBadge(s.mode)}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">
+                      {s.currentTurn}/{s.maxTurns}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-zinc-700 dark:text-zinc-300">{s.evaluation?.overallScore ?? tCommon("notAvailable")}</div>
+                      {s.evaluation?.humanCalibrated && (
+                        <div className="text-xs text-emerald-600 dark:text-emerald-400">
+                          {t("humanLabel")}: {s.evaluation.humanOverallScore ?? tCommon("notAvailable")}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {recommendationBadge(s.evaluation?.recommendation || null)}
+                        {s.evaluation?.humanCalibrated && (
+                          <span className="text-xs text-emerald-600 dark:text-emerald-400">✓</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex flex-wrap items-center justify-end gap-3">
+                        <button
+                          onClick={() => copyInterviewLink(s.id)}
+                          className="inline-flex min-h-[44px] items-center px-2 text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                        >
+                          {copiedId === s.id ? t("copied") : t("copyLink")}
+                        </button>
+                        {s.mode === "voice" && s.status !== "completed" && (
+                          <Link
+                            href={`/interview/${s.id}/voice`}
+                            className="inline-flex min-h-[44px] items-center px-2 text-sm text-purple-600 underline hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-200"
+                          >
+                            {t("joinVoice")}
+                          </Link>
+                        )}
+                        <Link
+                          href={`/interview/${s.id}/transcript`}
+                          className="inline-flex min-h-[44px] items-center px-2 text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                        >
+                          {t("view")}
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile Cards */}
+        <div className="space-y-3 md:hidden">
+          {filteredSessions.length === 0 ? (
+            <p className="text-center text-zinc-500 dark:text-zinc-400">{t("noSessions")}</p>
+          ) : (
+            filteredSessions.map((s) => (
+              <div
+                key={s.id}
+                className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+              >
+                <div className="mb-3 flex items-start justify-between">
+                  <div>
+                    <div className="font-medium text-zinc-900 dark:text-zinc-50">
+                      {s.candidate?.name || tCommon("unknown")}
+                    </div>
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">{s.candidate?.email}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {statusBadge(s.status)}
+                    {modeBadge(s.mode)}
+                  </div>
+                </div>
+
+                <div className="mb-3 text-sm text-zinc-700 dark:text-zinc-300">
+                  {s.position?.title || tCommon("unknown")} — {s.position?.level}
+                </div>
+
+                <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+                  <div className="text-zinc-700 dark:text-zinc-300">
+                    {t("turnLabel", { current: s.currentTurn, max: s.maxTurns })}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-500 dark:text-zinc-400">{t("score")}:</span>
+                    <span className="font-medium text-zinc-900 dark:text-zinc-50">{s.evaluation?.overallScore ?? tCommon("notAvailable")}</span>
+                  </div>
+                  {s.evaluation?.humanCalibrated && (
+                    <div className="text-xs text-emerald-600 dark:text-emerald-400">
+                      {t("humanLabel")}: {s.evaluation.humanOverallScore ?? tCommon("notAvailable")}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  {recommendationBadge(s.evaluation?.recommendation || null)}
+                  {s.evaluation?.humanCalibrated && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400">✓</span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                  <button
+                    onClick={() => copyInterviewLink(s.id)}
+                    className="inline-flex min-h-[44px] items-center text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                  >
+                    {copiedId === s.id ? t("copied") : t("copyLink")}
+                  </button>
+                  {s.mode === "voice" && s.status !== "completed" && (
+                    <Link
+                      href={`/interview/${s.id}/voice`}
+                      className="inline-flex min-h-[44px] items-center text-sm text-purple-600 underline hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-200"
+                    >
+                      {t("joinVoice")}
+                    </Link>
+                  )}
+                  <Link
+                    href={`/interview/${s.id}/transcript`}
+                    className="inline-flex min-h-[44px] items-center text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                  >
+                    {t("view")}
+                  </Link>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

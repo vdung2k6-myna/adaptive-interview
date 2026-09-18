@@ -1,25 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-
-const navLinks = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/setup", label: "New Interview" },
-  { href: "/positions", label: "Positions" },
-  { href: "/candidates", label: "Candidates" },
-  { href: "/campaigns", label: "Campaigns" },
-];
+import { Link } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
 
 export default function MobileNav() {
   const [open, setOpen] = useState(false);
+  const t = useTranslations("nav");
+
+  const navLinks = [
+    { href: "/dashboard", label: t("dashboard") },
+    { href: "/voice-agent", label: t("voiceAgent") },
+    { href: "/setup", label: t("newInterview") },
+    { href: "/positions", label: t("positions") },
+    { href: "/candidates", label: t("candidates") },
+    { href: "/campaigns", label: t("campaigns") },
+  ];
 
   return (
     <div className="md:hidden">
       <button
         type="button"
         onClick={() => setOpen((s) => !s)}
-        aria-label={open ? "Close navigation" : "Open navigation"}
+        aria-label={open ? t("closeNavigation") : t("openNavigation")}
         aria-expanded={open}
         className="inline-flex items-center justify-center rounded-lg p-2 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
       >

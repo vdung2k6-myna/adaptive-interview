@@ -2,7 +2,7 @@
   "name": "Adaptive Interview Engine",
   "short_name": "Interviews",
   "description": "AI-powered adaptive technical interviews",
-  "start_url": "/dashboard",
+  "start_url": "/voice-agent",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#171717",
