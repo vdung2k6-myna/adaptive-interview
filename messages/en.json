@@ -130,6 +130,8 @@
     "interviewerLabel": "🤖 Interviewer",
     "candidateLabel": "👤 Candidate",
     "playbackSpeed": "Playback speed",
+    "speak": "Speak",
+    "stop": "Stop",
     "evaluationHistorical": "Evaluation (Historical)",
     "backToLatest": "Back to latest",
     "noEvaluation": "No evaluation yet.",

@@ -8,7 +8,14 @@ import AudioRecorder from "@/components/AudioRecorder";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { SentenceAudioQueue } from "@/lib/audio/sentence-queue";
 import { apiFetch } from "@/lib/api-client";
+import {
+  createVoicePrefetch,
+  shouldPrefetch,
+  type VoicePrefetchController,
+} from "@/lib/voice-prefetch";
 import { PERSONAS, getPersonaById } from "./personas";
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 
 interface AgentMessage {
   id: string;
@@ -101,6 +108,35 @@ export default function VoiceAgentPage() {
   // Scroll ref
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const hasAttemptedAutoStartRef = useRef(false);
+
+  // Speculative knowledge retrieval for text turns (design.md D6). Created on
+  // first use rather than during render, so nothing is set up for a session that
+  // never types.
+  const prefetchRef = useRef<VoicePrefetchController | null>(null);
+  function getPrefetch(): VoicePrefetchController {
+    if (!prefetchRef.current) {
+      prefetchRef.current = createVoicePrefetch({ fetch: apiFetch, baseUrl: BACKEND_URL });
+    }
+    return prefetchRef.current;
+  }
+
+  /**
+   * Note the current input state. Every path that changes what the user might
+   * submit goes through here, so the prefetch policy lives in one place.
+   */
+  function noteDraft(mode: "voice" | "text", text: string) {
+    if (config && shouldPrefetch({ mode, text, topics: config.enabledTopics })) {
+      getPrefetch().schedule(text, config.enabledTopics);
+    } else {
+      getPrefetch().cancel();
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      prefetchRef.current?.cancel();
+    };
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -390,6 +426,13 @@ export default function VoiceAgentPage() {
       formData.append("audio", input.blob, "recording.wav");
     } else if (input?.type === "text") {
       formData.append("text", input.text);
+      // A prefetch held for exactly this text is this turn's knowledge, already
+      // in hand — so the backend skips its own search (D1). Consumed here:
+      // whatever happens next, no later turn carries this id.
+      const { prefetchId } = getPrefetch().turnFields(input.text);
+      if (prefetchId) {
+        formData.append("prefetchId", prefetchId);
+      }
     }
 
     if (activeConfig.enabledTopics.length > 0) {
@@ -400,9 +443,8 @@ export default function VoiceAgentPage() {
     turnAbortRef.current = turnAbortCtrl;
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-      console.log("[VoiceAgent] Starting SSE to", `${backendUrl}/api/voice-agent/stream`);
-      const res = await apiFetch(`${backendUrl}/api/voice-agent/stream`, {
+      console.log("[VoiceAgent] Starting SSE to", `${BACKEND_URL}/api/voice-agent/stream`);
+      const res = await apiFetch(`${BACKEND_URL}/api/voice-agent/stream`, {
         method: "POST",
         body: formData,
         signal: turnAbortCtrl.signal,
@@ -631,8 +673,7 @@ export default function VoiceAgentPage() {
     speakAbortRef.current = abortCtrl;
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-      const res = await apiFetch(`${backendUrl}/api/voice/speak-stream`, {
+      const res = await apiFetch(`${BACKEND_URL}/api/voice/speak-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1102,7 +1143,10 @@ export default function VoiceAgentPage() {
           <div className="mb-3 flex items-center justify-center gap-2">
             <button
               type="button"
-              onClick={() => setInputMode("voice")}
+              onClick={() => {
+                setInputMode("voice");
+                noteDraft("voice", textInput);
+              }}
               className={`min-h-[44px] rounded-lg border px-3 py-1.5 text-sm ${
                 inputMode === "voice"
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
@@ -1113,7 +1157,10 @@ export default function VoiceAgentPage() {
             </button>
             <button
               type="button"
-              onClick={() => setInputMode("text")}
+              onClick={() => {
+                setInputMode("text");
+                noteDraft("text", textInput);
+              }}
               className={`min-h-[44px] rounded-lg border px-3 py-1.5 text-sm ${
                 inputMode === "text"
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
@@ -1137,7 +1184,10 @@ export default function VoiceAgentPage() {
               <input
                 type="text"
                 value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
+                onChange={(e) => {
+                  setTextInput(e.target.value);
+                  noteDraft("text", e.target.value);
+                }}
                 placeholder={t("typeMessage")}
                 disabled={processing}
                 className="min-h-[44px] flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"

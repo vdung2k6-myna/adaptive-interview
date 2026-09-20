@@ -4,15 +4,22 @@
  * Caching strategy:
  * - Static Next.js build assets (`/_next/static/*`): cache-first, immutable.
  * - HTML navigation requests: network-first with offline fallback.
- * - API calls (`/api/*`): network-only.
- * - Audio files (`/audio/*`): network-first.
- * - Everything else: network-first.
+ * - API calls (`/api/*`): bypassed — this worker never caches them, and relaying
+ *   them would bound a streamed response's lifetime by the worker's.
+ * - Range requests: bypassed — the Cache API cannot store 206 Partial Content.
+ * - Audio files (`/audio/*`) and everything else: network-first.
  *
- * The literal __BUILD_ID__ is replaced at build time so each deployment
- * gets a fresh cache name and old service workers are replaced quickly.
+ * A fetch this worker can neither serve from cache nor complete over the network
+ * fails as a network error (`Response.error()`), never as a synthesized HTTP
+ * status, so a worker-side failure stays distinguishable from a real one.
+ *
+ * The cache version above is stamped at build time by scripts/postbuild.mjs with
+ * the identity of the build that produced it, naming each deployment's caches
+ * after that build. The build fails when nothing has stamped it, so an unstamped
+ * worker cannot ship and a browser cannot be left holding an old one.
  */
 
-const CACHE_VERSION = "__BUILD_ID__" === "__BUILD_ID__" ? `dev-${Date.now()}` : "__BUILD_ID__";
+const CACHE_VERSION = "__BUILD_ID__";
 const SHELL_CACHE = `shell-${CACHE_VERSION}`;
 const ASSET_CACHE = `assets-${CACHE_VERSION}`;
 
@@ -60,16 +67,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Bypass range requests — the Cache API cannot store 206 Partial Content responses.
-  // Browsers send Range headers for media (audio, video) and some fonts.
-  if (request.headers.has("range")) {
-    event.respondWith(fetch(request));
+  // Bypass API calls. Handling them buys nothing — this worker never caches
+  // them — and respondWith() would put the worker in the path of a streamed
+  // response whose lifetime must not be bounded by the worker's.
+  if (API_PATTERN.test(url.pathname)) {
     return;
   }
 
-  // API calls must always hit the network
-  if (API_PATTERN.test(url.pathname)) {
-    event.respondWith(fetch(request));
+  // Bypass range requests — the Cache API cannot store 206 Partial Content responses.
+  // Browsers send Range headers for media (audio, video) and some fonts.
+  if (request.headers.has("range")) {
     return;
   }
 
@@ -91,7 +98,7 @@ self.addEventListener("fetch", (event) => {
             }
             return response;
           })
-          .catch(() => cached || new Response("Asset unavailable", { status: 503 }));
+          .catch(() => Response.error());
       })
     );
     return;
@@ -148,7 +155,7 @@ self.addEventListener("fetch", (event) => {
       })
       .catch(() => {
         return caches.match(request).then((cached) => {
-          return cached || new Response("Network error", { status: 503 });
+          return cached || Response.error();
         });
       })
   );

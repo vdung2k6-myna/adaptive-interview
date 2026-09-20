@@ -86,7 +86,7 @@ The frontend is packaged as a Progressive Web App so Android and iOS users can i
 Browser / Android / iOS
     │
     ├─ manifest.json     → app metadata + launcher icons
-    ├─ sw.js             → precache shell, network-first API/audio
+    ├─ sw.js             → precache shell, network-first audio, API bypassed
     └─ offline.html      → fallback when offline
               │
               ▼
@@ -99,8 +99,8 @@ Browser / Android / iOS
 Key points:
 
 - `public/manifest.json` declares `display: standalone`, icons, theme colors, and start URL. Chrome on Android uses it for the install prompt.
-- `public/sw.js` is registered by a small script in `src/app/layout.tsx`. It precaches the root shell, `offline.html`, and `manifest.json`, then uses a network-first strategy for API and audio requests. Immutable Next.js static chunks (`/_next/static/*`) are cached long-term.
-- The service worker cache name includes a build id that `scripts/postbuild.mjs` stamps after each build. Old caches are deleted on activation, preventing stale shells across deployments.
+- `public/sw.js` is registered by a small script in `src/app/layout.tsx`. It precaches the root shell, `offline.html`, and `manifest.json`, bypasses API requests entirely (it never caches them, and relaying them would bound a streamed response's lifetime by the worker's), and uses a network-first strategy for audio requests. Immutable Next.js static chunks (`/_next/static/*`) are cached long-term.
+- The service worker cache name includes a build id that `scripts/postbuild.mjs` stamps after each build, and that build fails rather than shipping a worker it could not stamp. Old caches are deleted on activation, preventing stale shells across deployments.
 - `public/offline.html` is served when the user launches the PWA without connectivity.
 - PWA assets live in `public/` and are copied into `.next/standalone/public/` by `scripts/postbuild.mjs`.
 - HTTPS is required in production for the install prompt; local development over `localhost` still allows service worker registration.

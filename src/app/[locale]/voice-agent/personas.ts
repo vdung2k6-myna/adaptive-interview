@@ -57,7 +57,14 @@ export const PERSONAS: Persona[] = [
     label: "Custom",
     emoji: "✏️",
     defaultPrompt: "Hãy đóng vai một chuyên gia dinh dưỡng tận tâm. Hãy tư vấn cho tôi các món ăn đơn giản, dễ tiêu hóa, tốt cho người lớn tuổi bằng giọng văn gần gũi, dễ hiểu như con cháu đang dặn dò",
-    knowledgeTopics: ["Thần điêu hiệp lữ"]
+    knowledgeTopics: ["Chăm sóc người lớn tuổi"]
+  },
+  {
+    id: "custom-2",
+    label: "Custom 2",
+    emoji: "✏️",
+    defaultPrompt: "Hãy đóng vai một chuyên gia dinh dưỡng tận tâm. Hãy tư vấn cho tôi các món ăn đơn giản, dễ tiêu hóa, tốt cho người lớn tuổi bằng giọng văn gần gũi, dễ hiểu như con cháu đang dặn dò",
+    knowledgeTopics: ["Chăm sóc người lớn tuổi","Bệnh người cao tuổi"],
   },
 ];
 

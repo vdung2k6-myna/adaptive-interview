@@ -130,6 +130,8 @@
     "interviewerLabel": "🤖 Người phỏng vấn",
     "candidateLabel": "👤 Ứng viên",
     "playbackSpeed": "Tốc độ phát",
+    "speak": "Nói",
+    "stop": "Dừng",
     "evaluationHistorical": "Đánh giá (Lịch sử)",
     "backToLatest": "Quay lại mới nhất",
     "noEvaluation": "Chưa có đánh giá.",
