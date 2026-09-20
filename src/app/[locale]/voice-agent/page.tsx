@@ -13,7 +13,7 @@ import {
   shouldPrefetch,
   type VoicePrefetchController,
 } from "@/lib/voice-prefetch";
-import { PERSONAS, getPersonaById } from "./personas";
+import { PERSONAS, getPersonaById, type Persona } from "./personas";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 
@@ -30,6 +30,67 @@ interface AgentConfig {
   personaId: string;
   systemPrompt: string;
   enabledTopics: string[];
+}
+
+/**
+ * The part of the configuration this browser remembers. The per-topic selection
+ * belongs here because it is a choice a persona's own `knowledgeTopics` cannot
+ * stand in for: coming back to find an unchecked topic checked again is losing
+ * the choice, not restoring it.
+ */
+interface StoredVoiceAgentConfig {
+  personaId?: string;
+  language?: "english" | "vietnamese";
+  engine?: "kokoro" | "piper" | "supertonic";
+  enabledTopics?: string[];
+}
+
+const CONFIG_STORAGE_KEY = "voiceAgentConfig";
+
+/**
+ * What this browser remembers, or an empty object on any failure — a page that
+ * cannot read its own memory must still render.
+ */
+function readStoredConfig(): StoredVoiceAgentConfig {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as StoredVoiceAgentConfig) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Remembers a choice as it is made, merged into what is already stored, so
+ * returning to the page restores what was last chosen rather than only what was
+ * last started — `startConversation` used to be the sole writer, which is why
+ * picking a persona and leaving the page lost the choice.
+ */
+function persistDraft(patch: StoredVoiceAgentConfig): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(
+      CONFIG_STORAGE_KEY,
+      JSON.stringify({ ...readStoredConfig(), ...patch })
+    );
+  } catch {
+    // Unremembered is an acceptable outcome (private mode, quota) and must not
+    // be a reason the page fails.
+  }
+}
+
+/**
+ * The persona whose id is exactly this, or nothing. `getPersonaById` answers
+ * with the first persona when it does not recognise an id, so it cannot decide
+ * whether an id is real — and a remembered id that is no longer a persona has to
+ * fall back to the default rather than be adopted as a selection with no option
+ * behind it.
+ */
+function findPersona(id: string): Persona | undefined {
+  return PERSONAS.find((p) => p.id === id);
 }
 
 interface SentenceEvent {
@@ -142,11 +203,9 @@ export default function VoiceAgentPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, streamItems.length]);
 
-  // Reset enabledTopics when persona changes (default all to checked)
-  useEffect(() => {
-    const persona = getPersonaById(personaId);
-    setEnabledTopics(persona?.knowledgeTopics ? [...persona.knowledgeTopics] : []);
-  }, [personaId]);
+  // The topic selection is set where it is decided rather than by an effect on
+  // `personaId`: the config effect below restores a remembered selection on
+  // mount, and the persona select resets it to the new persona's own topics.
 
   // Resolve config from URL params + localStorage + defaults
   useEffect(() => {
@@ -160,10 +219,10 @@ export default function VoiceAgentPage() {
     let resolvedLang: "english" | "vietnamese" = "english";
     let resolvedEngine: "kokoro" | "piper" | "supertonic" = "supertonic";
 
-    // Validate URL persona
-    if (urlPersona) {
-      const found = getPersonaById(urlPersona);
-      if (found) resolvedPersona = urlPersona;
+    // Validate URL persona — exactly, since `getPersonaById` answers with the
+    // first persona and would make any id look valid.
+    if (urlPersona && findPersona(urlPersona)) {
+      resolvedPersona = urlPersona;
     }
 
     // Validate URL lang
@@ -176,35 +235,42 @@ export default function VoiceAgentPage() {
       resolvedEngine = urlEngine;
     }
 
-    // If no valid URL params, try localStorage
+    // If no valid URL params, use what this browser remembers (persistDraft).
+    // The remembered persona counts only if it is exactly a persona, and the
+    // remembered topics count only for the persona they were chosen for, since
+    // this key outlives any particular persona.
+    let rememberedTopics: string[] | undefined;
     if (!urlPersona && !urlLang && !urlEngine) {
-      try {
-        const stored = localStorage.getItem("voiceAgentConfig");
-        if (stored) {
-          const parsed = JSON.parse(stored) as {
-            personaId?: string;
-            language?: "english" | "vietnamese";
-            engine?: "kokoro" | "piper" | "supertonic";
-          };
-          if (parsed.personaId && getPersonaById(parsed.personaId)) {
-            resolvedPersona = parsed.personaId;
-          }
-          if (parsed.language === "english" || parsed.language === "vietnamese") {
-            resolvedLang = parsed.language;
-          }
-          if (parsed.engine === "kokoro" || parsed.engine === "piper" || parsed.engine === "supertonic") {
-            resolvedEngine = parsed.engine;
-          }
-        }
-      } catch {
-        // ignore invalid localStorage
+      const stored = readStoredConfig();
+      if (stored.personaId && findPersona(stored.personaId)) {
+        resolvedPersona = stored.personaId;
+      }
+      if (stored.language === "english" || stored.language === "vietnamese") {
+        resolvedLang = stored.language;
+      }
+      if (stored.engine === "kokoro" || stored.engine === "piper" || stored.engine === "supertonic") {
+        resolvedEngine = stored.engine;
+      }
+      if (stored.personaId === resolvedPersona && Array.isArray(stored.enabledTopics)) {
+        rememberedTopics = stored.enabledTopics.filter(
+          (topic): topic is string => typeof topic === "string"
+        );
       }
     }
 
     const persona = getPersonaById(resolvedPersona);
+    const personaTopics = persona?.knowledgeTopics ? [...persona.knowledgeTopics] : [];
     setLanguage(resolvedLang);
     setEngine(resolvedEngine);
     setPersonaId(resolvedPersona);
+    // A remembered selection is intersected with the persona's topics, so a topic
+    // that has since left the persona cannot be sent on its behalf. An explicitly
+    // empty selection is restored as empty, not as "all of them".
+    setEnabledTopics(
+      rememberedTopics === undefined
+        ? personaTopics
+        : personaTopics.filter((topic) => rememberedTopics.includes(topic))
+    );
     setSystemPrompt(persona?.defaultPrompt || "");
     setIsResolvingConfig(false);
   }, [searchParams]);
@@ -344,19 +410,15 @@ export default function VoiceAgentPage() {
     setLoading(false);
     setAutoStartFailed(false);
 
-    // Persist config for next session
-    try {
-      localStorage.setItem(
-        "voiceAgentConfig",
-        JSON.stringify({
-          personaId: newConfig.personaId,
-          language: newConfig.language,
-          engine: newConfig.engine,
-        })
-      );
-    } catch {
-      // ignore storage errors
-    }
+    // Remember this session's config. Choices are already remembered as they are
+    // made (persistDraft); recording the same thing here means what was last
+    // started is also what is restored, topics included.
+    persistDraft({
+      personaId: newConfig.personaId,
+      language: newConfig.language,
+      engine: newConfig.engine,
+      enabledTopics: newConfig.enabledTopics,
+    });
 
     await initAudioContext();
     cleanupStreamState();
@@ -837,6 +899,7 @@ export default function VoiceAgentPage() {
                     onClick={() => {
                       setLanguage("english");
                       setEngine("supertonic");
+                      persistDraft({ language: "english", engine: "supertonic" });
                     }}
                     className={`flex-1 min-h-[44px] rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       language === "english"
@@ -851,6 +914,7 @@ export default function VoiceAgentPage() {
                     onClick={() => {
                       setLanguage("vietnamese");
                       setEngine("supertonic");
+                      persistDraft({ language: "vietnamese", engine: "supertonic" });
                     }}
                     className={`flex-1 min-h-[44px] rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       language === "vietnamese"
@@ -870,7 +934,10 @@ export default function VoiceAgentPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => setEngine("supertonic")}
+                    onClick={() => {
+                      setEngine("supertonic");
+                      persistDraft({ engine: "supertonic" });
+                    }}
                     className={`min-h-[44px] rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       engine === "supertonic"
                         ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
@@ -881,7 +948,10 @@ export default function VoiceAgentPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setEngine("kokoro")}
+                    onClick={() => {
+                      setEngine("kokoro");
+                      persistDraft({ engine: "kokoro" });
+                    }}
                     className={`min-h-[44px] rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       engine === "kokoro"
                         ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
@@ -892,7 +962,10 @@ export default function VoiceAgentPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setEngine("piper")}
+                    onClick={() => {
+                      setEngine("piper");
+                      persistDraft({ engine: "piper" });
+                    }}
                     className={`min-h-[44px] rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       engine === "piper"
                         ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
@@ -912,11 +985,17 @@ export default function VoiceAgentPage() {
                   value={personaId}
                   onChange={(e) => {
                     const id = e.target.value;
+                    // Changing persona resets the topics to that persona's own
+                    // (all enabled) — a selection belongs to the persona it was
+                    // made for — and remembers both.
+                    const persona = findPersona(id);
+                    const topics = persona?.knowledgeTopics ? [...persona.knowledgeTopics] : [];
                     setPersonaId(id);
-                    const persona = getPersonaById(id);
                     if (persona) {
                       setSystemPrompt(persona.defaultPrompt);
                     }
+                    setEnabledTopics(topics);
+                    persistDraft({ personaId: id, enabledTopics: topics });
                   }}
                   className="w-full min-h-[44px] rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                 >
@@ -943,15 +1022,13 @@ export default function VoiceAgentPage() {
                           type="checkbox"
                           checked={enabledTopics.includes(topic)}
                           onChange={(e) => {
-                            if (e.target.checked) {
-                              setEnabledTopics((prev) =>
-                                prev.includes(topic) ? prev : [...prev, topic]
-                              );
-                            } else {
-                              setEnabledTopics((prev) =>
-                                prev.filter((t) => t !== topic)
-                              );
-                            }
+                            const next = e.target.checked
+                              ? enabledTopics.includes(topic)
+                                ? enabledTopics
+                                : [...enabledTopics, topic]
+                              : enabledTopics.filter((t) => t !== topic);
+                            setEnabledTopics(next);
+                            persistDraft({ enabledTopics: next });
                           }}
                           className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-50"
                         />
