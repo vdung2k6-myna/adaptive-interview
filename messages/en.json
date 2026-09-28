@@ -33,6 +33,7 @@
     "joinVoice": "Join Voice",
     "view": "View",
     "loading": "Loading dashboard...",
+    "failedLoad": "Failed to load sessions",
     "modeText": "💬 Text",
     "modeVoice": "🎙️ Voice",
     "humanLabel": "Human",
@@ -64,7 +65,9 @@
     "errorSelectBoth": "Please select both a position and a candidate.",
     "createdTitle": "Interview created! Redirecting in 2 seconds...",
     "copy": "Copy",
-    "loading": "Loading setup data..."
+    "loading": "Loading setup data...",
+    "failedLoad": "Failed to load setup data",
+    "failedCreate": "Failed to create session"
   },
   "interview": {
     "loading": "Loading interview...",
@@ -174,6 +177,7 @@
     "interviewerThinking": "Interviewer is thinking...",
     "generatingVoice": "Generating voice...",
     "streamingError": "Streaming error",
+    "noticeNoSpeech": "🔇 No speech detected — please try again.",
     "interviewerTurnPrompt": "🤖 Interviewer spoke. Your turn to respond.",
     "completionMessage": "Thank you for completing the interview.",
     "tapToRecord": "Tap to start recording",
@@ -186,7 +190,8 @@
     "interviewerLabel": "🤖 Interviewer",
     "youLabel": "👤 You",
     "hideTranscript": "Hide transcript",
-    "showTranscript": "Show transcript"
+    "showTranscript": "Show transcript",
+    "viewTranscript": "View Transcript"
   },
   "candidates": {
     "title": "Candidates",
@@ -250,6 +255,7 @@
     "editPositionTitle": "Edit Position",
     "jobDescription": "Job Description",
     "addRequirement": "Add",
+    "add": "Add",
     "removeRequirement": "Remove {req}",
     "titlePlaceholder": "e.g. Senior Full Stack Engineer",
     "jobDescriptionPlaceholder": "Optional: describe the role, responsibilities, and team context",
@@ -328,6 +334,9 @@
     "inputMode": "Input Mode",
     "voice": "Voice",
     "text": "Text",
+    "soundOn": "🔊 Sound",
+    "soundOff": "🔇 Muted",
+    "noticeNoSpeech": "🔇 No speech detected — please try again.",
     "send": "Send",
     "typeMessage": "Type your message...",
     "processing": "Processing...",
@@ -405,7 +414,8 @@
     "deleting": "Deleting...",
     "score": "Score",
     "ai": "AI",
-    "human": "Human"
+    "human": "Human",
+    "failedCreate": "Failed to create"
   },
   "errors": {
     "generic": "Something went wrong",

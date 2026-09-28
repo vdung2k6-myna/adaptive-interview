@@ -12,6 +12,11 @@ import StreamingAudioQueue, {
   type AudioQueueItem,
 } from "@/components/StreamingAudioQueue";
 import { SentenceAudioQueue } from "@/lib/audio/sentence-queue";
+import {
+  createTurnAudioRecovery,
+  CANONICAL_RECOVERY_INDEX,
+  type TurnAudioRecovery,
+} from "@/lib/audio/turn-audio-recovery";
 import { apiFetch } from "@/lib/api-client";
 import { usePlaybackRate } from "@/lib/use-playback-rate";
 
@@ -73,9 +78,21 @@ export default function VoiceInterviewPage() {
   const params = useParams();
   const sessionId = params.id as string;
 
+  /**
+   * What to show for a `notice` — the server's gentle channel for a turn where
+   * nothing failed but nothing happened either. The code is the part that is
+   * translatable; `message` is the server's own English, shown only for a code
+   * this client has not learned, so a newer server is still legible.
+   */
+  function noticeText(event: { code?: string; message?: string }): string {
+    if (event.code === "no_speech") return t("noticeNoSpeech");
+    return event.message ?? "";
+  }
+
   const [data, setData] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [processing, setProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState("");
   const [useStreaming, setUseStreaming] = useState(true);
@@ -109,11 +126,40 @@ export default function VoiceInterviewPage() {
   // Created inside the user-gesture handler so AudioContext is valid.
   const sentenceQueueRef = useRef<SentenceAudioQueue | null>(null);
 
+  // Decides what a turn does when a segment cannot be played — play the turn's
+  // canonical recording in its place, or say that the turn could not be heard
+  // (design D3). Rebuilt per turn, so a turn's decisions never reach the next.
+  const turnAudioRef = useRef<TurnAudioRecovery | null>(null);
+
   // Per-turn generation counter and abort controller. A new recording
   // invalidates any still-running SSE reader from the previous turn so stale
   // chunks cannot leak into the new sentence queue.
   const turnGenerationRef = useRef(0);
   const turnAbortRef = useRef<AbortController | null>(null);
+
+  // Leaving the page must not leave the question playing. React drops these
+  // refs, but nothing they hold stops on its own: a scheduled Web Audio source
+  // outlives the component, and the SSE reader is an ordinary closure that keeps
+  // queueing sentences until something aborts it. The abort is also what lets
+  // the server see the connection close, which is what stops it generating the
+  // rest of the turn.
+  useEffect(() => {
+    return () => {
+      sentenceQueueRef.current?.stop();
+      turnAbortRef.current?.abort();
+      turnAbortRef.current = null;
+      // A fallback turn plays through this element rather than the queue.
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current.src = "";
+        audioPlayerRef.current.load();
+      }
+      // Suspended, not closed: a closed context needs a fresh user gesture to
+      // resume on mobile Safari, which the next recording does not reliably give.
+      void audioCtxRef.current?.suspend().catch(() => undefined);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // UI state driven by the queue callbacks
   const [queueCurrentIndex, setQueueCurrentIndex] = useState(-1);
@@ -248,6 +294,14 @@ export default function VoiceInterviewPage() {
 
       if (!res.ok) {
         const responseData = await res.json().catch(() => ({}));
+        // The same "heard nothing" the stream reports as a notice arrives here
+        // as a 400 with a code. Reading it as a failure would put this turn's
+        // silence in the red box next to the interviewer's questions, which is
+        // how it was reported before the code existed.
+        if (responseData.code === "no_speech") {
+          setNotice(noticeText(responseData));
+          return;
+        }
         throw new Error(responseData.error || t("failedProcessTurn"));
       }
 
@@ -317,6 +371,24 @@ export default function VoiceInterviewPage() {
       sentenceQueueRef.current.stop();
     }
     if (audioCtxRef.current) {
+      // Built alongside the queue, because the queue is where a failed segment is
+      // noticed and where a recovered recording has to be played.
+      turnAudioRef.current = createTurnAudioRecovery({
+        playCanonical: (url) => {
+          // Through the same queue, so a replay that follows segments still
+          // queued waits for them instead of talking over them. The recovery
+          // index is not a segment index, so nothing highlights for it: a replay
+          // is not a sentence.
+          sentenceQueueRef.current?.enqueue(CANONICAL_RECOVERY_INDEX, url, "");
+        },
+        onUnplayable: () => {
+          // The answer's text is on screen above this, so the candidate is not
+          // left with nothing — but the silence came from this turn, and it is
+          // reported rather than passed over (design D3).
+          setError(t("audioUnavailable"));
+        },
+      });
+
       sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
         playbackRate,
         onStart: (index) => {
@@ -327,9 +399,24 @@ export default function VoiceInterviewPage() {
         onEnd: () => {
           // UI updates handled by onStart of next item or onFinished
         },
-        onError: () => {
-          setQueueHasError(true);
-          setQueueIsPlaying(false);
+        onError: (index) => {
+          // A segment that fails to arrive is no longer an error in itself: it is
+          // a segment the turn's canonical recording can stand in for. The
+          // recovery decides, and reports only if the answer cannot be heard at
+          // all — the per-segment skip itself is the queue's, and is unchanged.
+          if (index === CANONICAL_RECOVERY_INDEX) {
+            turnAudioRef.current?.canonicalFailed();
+            return;
+          }
+          if (turnAudioRef.current) {
+            turnAudioRef.current.segmentFailed();
+          } else {
+            // Outside a turn there is no canonical to fall back to — the opening
+            // question is a single recording — so a failure there still reports
+            // itself, as it did before.
+            setQueueHasError(true);
+            setQueueIsPlaying(false);
+          }
         },
         onFinished: () => {
           setQueueIsPlaying(false);
@@ -341,6 +428,7 @@ export default function VoiceInterviewPage() {
     setProcessing(true);
     setProcessingStep(t("transcribing"));
     setError("");
+    setNotice("");
     setStreamItems([]);
     setStreamFallback(false);
     setQueueCurrentIndex(-1);
@@ -389,6 +477,11 @@ export default function VoiceInterviewPage() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      // Whether the server concluded this turn in-band — `done` or `notice` sets
+      // it. A stream that simply stops looks the same from here as one that
+      // ended, and only one of those means the turn is over, so the difference
+      // has to be recorded rather than inferred from the end of the stream.
+      let turnSettled = false;
 
       while (true) {
         if (myGen !== turnGenerationRef.current) {
@@ -488,10 +581,18 @@ export default function VoiceInterviewPage() {
 
               case "done": {
                 if (myGen !== turnGenerationRef.current) break;
+                turnSettled = true;
                 const d = parsed as DoneEvent;
                 setProcessing(false);
                 setProcessingStep("");
                 setStreamItems([]);
+
+                // The turn's canonical recording, which is what a segment that
+                // could not be played gets replaced by. `done` may arrive after
+                // the failure it answers, and the recovery waits for exactly
+                // this — so it is handed over as soon as it is known rather than
+                // only when something has already gone wrong.
+                turnAudioRef.current?.canonicalKnown(d.audioUrl || null);
 
                 setData((prev) => {
                   if (!prev) return prev;
@@ -514,8 +615,26 @@ export default function VoiceInterviewPage() {
                 break;
               }
 
+              case "notice": {
+                if (myGen !== turnGenerationRef.current) break;
+                // Nothing went wrong, so there is nothing to fall back for: this
+                // turn heard no words, and re-sending the same audio to
+                // `/api/voice/turn` would hear the same nothing. The turn ends
+                // here, with the remark shown and the recorder free again.
+                turnSettled = true;
+                console.warn("[VoiceInterview] SSE notice event:", parsed);
+                setNotice(noticeText(parsed));
+                setProcessing(false);
+                setProcessingStep("");
+                break;
+              }
+
               case "error": {
                 if (myGen !== turnGenerationRef.current) break;
+                // Settled either way: the fallback below replaces this turn's
+                // attempt, and the other branch has already said what went wrong
+                // — the end of the stream must not overwrite it.
+                turnSettled = true;
                 console.error("[VoiceInterview] SSE error event:", parsed);
                 // If we already received some sentences, show them; otherwise fallback
                 if (!hasReceivedSentencesRef.current) {
@@ -534,6 +653,19 @@ export default function VoiceInterviewPage() {
             // Skip malformed SSE data
           }
         }
+      }
+
+      // The stream ended without concluding the turn — no `done`, no `notice`, no
+      // `error`, just a stop. Left alone, the recorder stays disabled and the
+      // thinking step stays on screen for a turn that is over, which is what a
+      // client one build behind the server saw when a new event name reached it.
+      // Settled here rather than by a fallback: this turn's audio has already been
+      // transcribed once, and a second pass would hear the same nothing.
+      if (!turnSettled && myGen === turnGenerationRef.current) {
+        console.warn("[VoiceInterview] Stream ended without concluding the turn");
+        setProcessing(false);
+        setProcessingStep("");
+        setError(t("streamingError"));
       }
     } catch (err) {
       // A newer turn has already started; ignore errors from the stale reader.
@@ -730,6 +862,14 @@ export default function VoiceInterviewPage() {
                 />
               </div>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">{processingStep}</p>
+            </div>
+          )}
+
+          {/* Notice — a turn where nothing failed but nothing happened either,
+              so it is neither the red of an error nor the amber of a fallback. */}
+          {notice && data && (
+            <div className="rounded-lg bg-zinc-100 p-3 text-sm text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
+              {notice}
             </div>
           )}
 

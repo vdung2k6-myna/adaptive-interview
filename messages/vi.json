@@ -33,6 +33,7 @@
     "joinVoice": "Tham gia thoại",
     "view": "Xem",
     "loading": "Đang tải bảng điều khiển...",
+    "failedLoad": "Không thể tải phiên phỏng vấn",
     "modeText": "💬 Văn bản",
     "modeVoice": "🎙️ Giọng nói",
     "humanLabel": "Người",
@@ -64,7 +65,9 @@
     "errorSelectBoth": "Vui lòng chọn cả vị trí và ứng viên.",
     "createdTitle": "Đã tạo phiên phỏng vấn! Tự động chuyển hướng sau 2 giây...",
     "copy": "Sao chép",
-    "loading": "Đang tải dữ liệu thiết lập..."
+    "loading": "Đang tải dữ liệu thiết lập...",
+    "failedLoad": "Không thể tải dữ liệu thiết lập",
+    "failedCreate": "Không thể tạo phiên phỏng vấn"
   },
   "interview": {
     "loading": "Đang tải phiên phỏng vấn...",
@@ -174,6 +177,7 @@
     "interviewerThinking": "Người phỏng vấn đang suy nghĩ...",
     "generatingVoice": "Đang tạo giọng nói...",
     "streamingError": "Lỗi streaming",
+    "noticeNoSpeech": "🔇 Không nghe thấy giọng nói — vui lòng thử lại.",
     "interviewerTurnPrompt": "🤖 Người phỏng vấn đã nói. Đến lượt bạn trả lời.",
     "completionMessage": "Cảm ơn bạn đã hoàn thành buổi phỏng vấn.",
     "tapToRecord": "Nhấn để bắt đầu ghi âm",
@@ -186,7 +190,8 @@
     "interviewerLabel": "🤖 Người phỏng vấn",
     "youLabel": "👤 Bạn",
     "hideTranscript": "Ẩn bản ghi",
-    "showTranscript": "Hiện bản ghi"
+    "showTranscript": "Hiện bản ghi",
+    "viewTranscript": "Xem bản ghi"
   },
   "candidates": {
     "title": "Ứng viên",
@@ -250,6 +255,7 @@
     "editPositionTitle": "Chỉnh sửa vị trí",
     "jobDescription": "Mô tả công việc",
     "addRequirement": "Thêm",
+    "add": "Thêm",
     "removeRequirement": "Xóa {req}",
     "titlePlaceholder": "VD: Senior Full Stack Engineer",
     "jobDescriptionPlaceholder": "Tùy chọn: mô tả vai trò, trách nhiệm và bối cảnh nhóm",
@@ -328,6 +334,9 @@
     "inputMode": "Chế độ nhập",
     "voice": "Giọng nói",
     "text": "Văn bản",
+    "soundOn": "🔊 Âm thanh",
+    "soundOff": "🔇 Đã tắt tiếng",
+    "noticeNoSpeech": "🔇 Không nghe thấy giọng nói — vui lòng thử lại.",
     "send": "Gửi",
     "typeMessage": "Nhập tin nhắn của bạn...",
     "processing": "Đang xử lý...",
@@ -405,7 +414,8 @@
     "deleting": "Đang xóa...",
     "score": "Điểm",
     "ai": "AI",
-    "human": "Người"
+    "human": "Người",
+    "failedCreate": "Không thể tạo"
   },
   "errors": {
     "generic": "Có lỗi xảy ra",

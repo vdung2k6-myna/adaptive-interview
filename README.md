@@ -141,9 +141,21 @@ Create a `.env.local` file in the project root:
 ```bash
 # API Authentication (only required when backend has API_AUTH_TOKEN configured)
 NEXT_PUBLIC_API_TOKEN=your-secret-token-here
+
+# How long the voice-agent page waits for the persona catalog (GET /api/personas)
+# before falling back to its built-in persona list. Optional: 3000ms when unset.
+NEXT_PUBLIC_PERSONA_CATALOG_TIMEOUT_MS=3000
 ```
 
 Database, Ollama, audio service, and MCP variables live in the backend's `.env`. See [backend setup](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SETUP.md).
+
+The voice-agent page takes its persona list from the backend's catalog and keeps
+its built-in list as the fallback: if the catalog cannot be read within
+`NEXT_PUBLIC_PERSONA_CATALOG_TIMEOUT_MS` (or answers with a body the client cannot
+use), the page offers the built-in personas instead, so an unreachable API cannot
+stop a session being started. A `?persona=<id>` deep link resolves against the
+catalog first and the built-in list second, and selects the default persona when
+neither reports the identifier.
 
 ---
 
@@ -169,6 +181,9 @@ Create `.env.local`:
 ```bash
 # Only needed if backend has API_AUTH_TOKEN configured
 NEXT_PUBLIC_API_TOKEN=your-secret-token-here
+
+# Optional: persona-catalog timeout in ms (default 3000)
+NEXT_PUBLIC_PERSONA_CATALOG_TIMEOUT_MS=3000
 ```
 
 ### 4. Start the dev server

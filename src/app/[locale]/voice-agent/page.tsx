@@ -13,9 +13,25 @@ import {
   shouldPrefetch,
   type VoicePrefetchController,
 } from "@/lib/voice-prefetch";
+import {
+  DEFAULT_CATALOG_TIMEOUT_MS,
+  fetchPersonaCatalog,
+  resolveAnswerMode,
+  resolvePersona,
+  type AnswerMode,
+} from "@/lib/persona-catalog";
 import { PERSONAS, getPersonaById, type Persona } from "./personas";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+
+/**
+ * How long the page waits for the persona catalog before offering its built-in
+ * list (design.md D10). Config-driven rather than fixed so a deployment that
+ * knows its own API is slow can say so; the default is the module's, and short,
+ * because the fallback is the same set of personas the catalog seeds.
+ */
+const CATALOG_TIMEOUT_MS =
+  Number(process.env.NEXT_PUBLIC_PERSONA_CATALOG_TIMEOUT_MS) || DEFAULT_CATALOG_TIMEOUT_MS;
 
 interface AgentMessage {
   id: string;
@@ -30,6 +46,13 @@ interface AgentConfig {
   personaId: string;
   systemPrompt: string;
   enabledTopics: string[];
+  /**
+   * The mode the session's persona produces its replies in, as the catalog
+   * declared it. Carried here rather than looked up per turn because it is a
+   * property of the session that was started: the persona select can be changed
+   * without restarting, and a turn belongs to the session, not to the selection.
+   */
+  answerMode: AnswerMode;
 }
 
 /**
@@ -83,14 +106,15 @@ function persistDraft(patch: StoredVoiceAgentConfig): void {
 }
 
 /**
- * The persona whose id is exactly this, or nothing. `getPersonaById` answers
- * with the first persona when it does not recognise an id, so it cannot decide
- * whether an id is real — and a remembered id that is no longer a persona has to
- * fall back to the default rather than be adopted as a selection with no option
- * behind it.
+ * The persona whose id is exactly this, in the list the page is showing, falling
+ * back to the built-in list for an id the catalog does not carry. `getPersonaById`
+ * answers with the first persona when it does not recognise an id, so it cannot
+ * decide whether an id is real — and a remembered id that is no longer a persona
+ * has to fall back to the default rather than be adopted as a selection with no
+ * option behind it.
  */
-function findPersona(id: string): Persona | undefined {
-  return PERSONAS.find((p) => p.id === id);
+function findPersonaIn(list: readonly Persona[], id: string): Persona | undefined {
+  return resolvePersona(id, list, PERSONAS);
 }
 
 interface SentenceEvent {
@@ -109,6 +133,14 @@ interface UserEvent {
   messageId: string;
 }
 
+/** A turn the server ended without an answer, and what to say about it. `code` is
+ * the reason, translated by the client; `message` is the server's own wording,
+ * used for a code this build does not know. */
+interface NoticeEvent {
+  code?: string;
+  message?: string;
+}
+
 export default function VoiceAgentPage() {
   const t = useTranslations("voiceAgent");
   const searchParams = useSearchParams();
@@ -117,6 +149,11 @@ export default function VoiceAgentPage() {
   const [language, setLanguage] = useState<"english" | "vietnamese">("english");
   const [engine, setEngine] = useState<"kokoro" | "piper" | "supertonic">("supertonic");
   const [personaId, setPersonaId] = useState<string>(personaIdDefault);
+  /**
+   * The personas the page offers: the catalog once it has been read, and the
+   * built-in list until then — and for good, when the catalog cannot be read.
+   */
+  const [personas, setPersonas] = useState<Persona[]>(PERSONAS);
   const [systemPrompt, setSystemPrompt] = useState<string>(
     getPersonaById(personaIdDefault)?.defaultPrompt || ""
   );
@@ -129,7 +166,15 @@ export default function VoiceAgentPage() {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // A remark about a turn that ended without an answer, as opposed to `error`,
+  // which is a turn that ended because something broke. Kept apart so the two can
+  // be styled, and read, differently.
+  const [notice, setNotice] = useState("");
   const [inputMode, setInputMode] = useState<"voice" | "text">("voice");
+  // Whether playback is wanted at all, independent of how the next message is
+  // sent. Session-only on purpose: a mute remembered across a visit would silence
+  // a conversation the returning user has no memory of muting.
+  const [muted, setMuted] = useState(false);
   const [textInput, setTextInput] = useState("");
 
   // Streaming state
@@ -154,6 +199,14 @@ export default function VoiceAgentPage() {
   const turnGenerationRef = useRef(0);
   const turnAbortRef = useRef<AbortController | null>(null);
   const [queueIsPlaying, setQueueIsPlaying] = useState(false);
+  /**
+   * Whether the turn's sentences should be played, read *by the reading loop*
+   * rather than taken at fetch time: the loop is a closure built in the render
+   * that started the turn, so state read inside it is the value from that render.
+   * Switching mode or muting mid-answer is exactly the case this has to catch, and
+   * only a ref carries a change made after the closure was built.
+   */
+  const wantsAudioRef = useRef(true);
 
   // Replay state
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
@@ -193,10 +246,22 @@ export default function VoiceAgentPage() {
     }
   }
 
+  // Leaving the page must not leave the agent talking to an empty room. React
+  // drops these refs, but nothing they hold stops on its own: a scheduled Web
+  // Audio source outlives the component, and the SSE reader is an ordinary
+  // closure that keeps queueing sentences until something aborts it. The abort
+  // is also what lets the server see the connection close, which is what stops
+  // it generating the rest of the turn.
   useEffect(() => {
     return () => {
       prefetchRef.current?.cancel();
+      cleanupStreamState();
+      stopSpeaking();
+      // Suspended, not closed: a closed context needs a fresh user gesture to
+      // resume on mobile Safari, which the next visit's auto-start does not give.
+      void audioCtxRef.current?.suspend().catch(() => undefined);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -207,72 +272,114 @@ export default function VoiceAgentPage() {
   // `personaId`: the config effect below restores a remembered selection on
   // mount, and the persona select resets it to the new persona's own topics.
 
-  // Resolve config from URL params + localStorage + defaults
+  /**
+   * The persona an id names, in what the page is offering, the built-in list
+   * answering for an id the catalog does not carry.
+   */
+  const findPersona = (id: string): Persona | undefined => findPersonaIn(personas, id);
+
+  /**
+   * The same lookup for display: an id the page cannot resolve at all still has
+   * to render something, so it renders the default persona rather than nothing.
+   */
+  const personaFor = (id: string): Persona => findPersona(id) ?? PERSONAS[0];
+
+  // Resolve config from URL params + localStorage + defaults.
+  //
+  // The catalog is read before anything is resolved, because both a deep link and
+  // a remembered id are validated against the personas the page is about to
+  // offer — and the read is bounded by `CATALOG_TIMEOUT_MS`, so an API that never
+  // answers costs the wait rather than the page. `isResolvingConfig` stays true
+  // until it settles, which is what keeps the auto-start from sending a first
+  // turn as a persona the page has not finished choosing.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    let abandoned = false;
 
-    const urlPersona = searchParams.get("persona");
-    const urlLang = searchParams.get("lang");
-    const urlEngine = searchParams.get("engine");
+    void (async () => {
+      const loaded = await fetchPersonaCatalog({
+        fetch: apiFetch,
+        baseUrl: BACKEND_URL,
+        timeoutMs: CATALOG_TIMEOUT_MS,
+      });
+      // A load that settles after the page has gone must not set state on it.
+      if (abandoned) return;
 
-    let resolvedPersona = personaIdDefault;
-    let resolvedLang: "english" | "vietnamese" = "english";
-    let resolvedEngine: "kokoro" | "piper" | "supertonic" = "supertonic";
+      // The catalog is authoritative when it answers; the built-in list answers
+      // when it does not, which is what keeps a session startable either way
+      // (design.md D10).
+      const offered: Persona[] = loaded ?? PERSONAS;
 
-    // Validate URL persona — exactly, since `getPersonaById` answers with the
-    // first persona and would make any id look valid.
-    if (urlPersona && findPersona(urlPersona)) {
-      resolvedPersona = urlPersona;
-    }
+      const urlPersona = searchParams.get("persona");
+      const urlLang = searchParams.get("lang");
+      const urlEngine = searchParams.get("engine");
 
-    // Validate URL lang
-    if (urlLang === "english" || urlLang === "vietnamese") {
-      resolvedLang = urlLang;
-    }
+      let resolvedPersona = personaIdDefault;
+      let resolvedLang: "english" | "vietnamese" = "english";
+      let resolvedEngine: "kokoro" | "piper" | "supertonic" = "supertonic";
 
-    // Validate URL engine
-    if (urlEngine === "kokoro" || urlEngine === "piper" || urlEngine === "supertonic") {
-      resolvedEngine = urlEngine;
-    }
-
-    // If no valid URL params, use what this browser remembers (persistDraft).
-    // The remembered persona counts only if it is exactly a persona, and the
-    // remembered topics count only for the persona they were chosen for, since
-    // this key outlives any particular persona.
-    let rememberedTopics: string[] | undefined;
-    if (!urlPersona && !urlLang && !urlEngine) {
-      const stored = readStoredConfig();
-      if (stored.personaId && findPersona(stored.personaId)) {
-        resolvedPersona = stored.personaId;
+      // Validate URL persona — exactly, since an id that is not a persona has to
+      // fall back to the default rather than become a selection with no option
+      // behind it. The catalog answers first, then the built-in list, so a deep
+      // link resolves against either.
+      if (urlPersona && findPersonaIn(offered, urlPersona)) {
+        resolvedPersona = urlPersona;
       }
-      if (stored.language === "english" || stored.language === "vietnamese") {
-        resolvedLang = stored.language;
-      }
-      if (stored.engine === "kokoro" || stored.engine === "piper" || stored.engine === "supertonic") {
-        resolvedEngine = stored.engine;
-      }
-      if (stored.personaId === resolvedPersona && Array.isArray(stored.enabledTopics)) {
-        rememberedTopics = stored.enabledTopics.filter(
-          (topic): topic is string => typeof topic === "string"
-        );
-      }
-    }
 
-    const persona = getPersonaById(resolvedPersona);
-    const personaTopics = persona?.knowledgeTopics ? [...persona.knowledgeTopics] : [];
-    setLanguage(resolvedLang);
-    setEngine(resolvedEngine);
-    setPersonaId(resolvedPersona);
-    // A remembered selection is intersected with the persona's topics, so a topic
-    // that has since left the persona cannot be sent on its behalf. An explicitly
-    // empty selection is restored as empty, not as "all of them".
-    setEnabledTopics(
-      rememberedTopics === undefined
-        ? personaTopics
-        : personaTopics.filter((topic) => rememberedTopics.includes(topic))
-    );
-    setSystemPrompt(persona?.defaultPrompt || "");
-    setIsResolvingConfig(false);
+      // Validate URL lang
+      if (urlLang === "english" || urlLang === "vietnamese") {
+        resolvedLang = urlLang;
+      }
+
+      // Validate URL engine
+      if (urlEngine === "kokoro" || urlEngine === "piper" || urlEngine === "supertonic") {
+        resolvedEngine = urlEngine;
+      }
+
+      // If no valid URL params, use what this browser remembers (persistDraft).
+      // The remembered persona counts only if it is exactly a persona, and the
+      // remembered topics count only for the persona they were chosen for, since
+      // this key outlives any particular persona.
+      let rememberedTopics: string[] | undefined;
+      if (!urlPersona && !urlLang && !urlEngine) {
+        const stored = readStoredConfig();
+        if (stored.personaId && findPersonaIn(offered, stored.personaId)) {
+          resolvedPersona = stored.personaId;
+        }
+        if (stored.language === "english" || stored.language === "vietnamese") {
+          resolvedLang = stored.language;
+        }
+        if (stored.engine === "kokoro" || stored.engine === "piper" || stored.engine === "supertonic") {
+          resolvedEngine = stored.engine;
+        }
+        if (stored.personaId === resolvedPersona && Array.isArray(stored.enabledTopics)) {
+          rememberedTopics = stored.enabledTopics.filter(
+            (topic): topic is string => typeof topic === "string"
+          );
+        }
+      }
+
+      const persona = findPersonaIn(offered, resolvedPersona);
+      const personaTopics = persona?.knowledgeTopics ? [...persona.knowledgeTopics] : [];
+      setPersonas(offered);
+      setLanguage(resolvedLang);
+      setEngine(resolvedEngine);
+      setPersonaId(resolvedPersona);
+      // A remembered selection is intersected with the persona's topics, so a topic
+      // that has since left the persona cannot be sent on its behalf. An explicitly
+      // empty selection is restored as empty, not as "all of them".
+      setEnabledTopics(
+        rememberedTopics === undefined
+          ? personaTopics
+          : personaTopics.filter((topic) => rememberedTopics.includes(topic))
+      );
+      setSystemPrompt(persona?.defaultPrompt || "");
+      setIsResolvingConfig(false);
+    })();
+
+    return () => {
+      abandoned = true;
+    };
   }, [searchParams]);
 
   // Auto-start conversation when config is resolved and conditions are met
@@ -343,11 +450,15 @@ export default function VoiceAgentPage() {
     console.log(`[VoiceAgent] flushPendingChunks nextExpected=${idx} pending=[${pendingKeys.join(",")}]`);
     while (pendingChunksRef.current.has(idx)) {
       const chunk = pendingChunksRef.current.get(idx)!;
-      if (chunk.audio) {
+      // The gate is read here rather than where the chunk arrived, so a mode
+      // switch or a mute lands on the next sentence instead of on the next turn.
+      // The index still advances either way: the queue's cursor is what keeps the
+      // chunks in order, and a skipped one must not leave a hole in it.
+      if (chunk.audio && wantsAudioRef.current) {
         console.log(`[VoiceAgent] Enqueue index=${idx} duration=${chunk.audio.duration} text="${chunk.text.substring(0, 40)}"`);
         sentenceQueueRef.current.enqueue(idx, chunk.audio, chunk.text);
       } else {
-        console.log(`[VoiceAgent] Skip index=${idx} (no audio) text="${chunk.text.substring(0, 40)}"`);
+        console.log(`[VoiceAgent] Skip index=${idx} (${chunk.audio ? "not playing" : "no audio"}) text="${chunk.text.substring(0, 40)}"`);
       }
       pendingChunksRef.current.delete(idx);
       idx++;
@@ -381,6 +492,7 @@ export default function VoiceAgentPage() {
     setConfig(null);
     setMessages([]);
     setError("");
+    setNotice("");
     setLoading(false);
     setProcessing(false);
     setProcessingStep("");
@@ -402,6 +514,11 @@ export default function VoiceAgentPage() {
       personaId,
       systemPrompt: forcePromptLanguage(systemPrompt.trim()),
       enabledTopics,
+      // The mode the persona declared, folded to the two values the server acts
+      // on: a persona the catalog reports without one — or the built-in list,
+      // which declares none — generates every reply, exactly as before this
+      // capability existed.
+      answerMode: resolveAnswerMode(findPersona(personaId)?.answerMode),
     };
 
     setConfig(newConfig);
@@ -472,6 +589,9 @@ export default function VoiceAgentPage() {
     setProcessingStep(input ? t("agentThinking") : t("agentStarting"));
     startThinkingTimer();
     setError("");
+    // The previous turn's remark has been read by now, and this turn is a reply to
+    // it — leaving it up would put it beside an answer it does not describe.
+    setNotice("");
 
     const formData = new FormData();
     formData.append("language", activeConfig.language);
@@ -501,6 +621,21 @@ export default function VoiceAgentPage() {
       formData.append("enabledTopics", JSON.stringify(activeConfig.enabledTopics));
     }
 
+    // The persona's answer mode travels with every turn, because the server reads
+    // it per turn and has no other way to know which persona this session is: the
+    // catalog the client loaded is where it was declared. A server older than this
+    // field ignores it and generates, which is what a client that does not send it
+    // gets too — so a stale client against a new API, and a new client against an
+    // old one, both behave as they did before.
+    formData.append("answerMode", activeConfig.answerMode);
+
+    // Told up front rather than left to be inferred: synthesis is the expensive
+    // half of a turn and the bulk of what reaches the wire, so a client that will
+    // not play the answer asks the server not to make it. Read from the ref, since
+    // this is the value the turn's own gates will be using. The replay button still
+    // works on such a turn — it re-synthesizes on demand through speak-stream.
+    formData.append("speak", wantsAudioRef.current ? "1" : "0");
+
     const turnAbortCtrl = new AbortController();
     turnAbortRef.current = turnAbortCtrl;
 
@@ -523,6 +658,14 @@ export default function VoiceAgentPage() {
       let buffer = "";
       let currentAgentText = "";
       const currentMessageId = `agent-${Date.now()}`;
+      // Whether the server concluded this turn in-band. `done`, `notice` and
+      // `error` all set it, and it is what tells "the turn ended" apart from "the
+      // stream stopped" — from here those look identical, and only one of them
+      // means the UI may go back to idle. A server that ends a turn with an event
+      // this client does not know (a newer `notice`, say) would otherwise leave
+      // the turn running forever, with the thinking counter climbing for a turn
+      // that is over.
+      let turnSettled = false;
 
       while (true) {
         if (myGen !== turnGenerationRef.current) {
@@ -580,7 +723,7 @@ export default function VoiceAgentPage() {
                 console.log(`[VoiceAgent] SSE sentence index=${s.index} audioData=${s.audioData ? "present" : "null"} text="${s.text.substring(0, 40)}"`);
 
                 let audioBuffer: AudioBuffer | null = null;
-                if (s.audioData && audioCtxRef.current) {
+                if (s.audioData && audioCtxRef.current && wantsAudioRef.current) {
                   try {
                     const binaryString = atob(s.audioData);
                     const bytes = new Uint8Array(binaryString.length);
@@ -592,6 +735,11 @@ export default function VoiceAgentPage() {
                   } catch (err) {
                     console.warn(`[VoiceAgent] Failed to decode audioData index=${s.index}:`, err);
                   }
+                } else if (s.audioData && !wantsAudioRef.current) {
+                  // The turn's `speak` ask is read once, at its start, so a mute
+                  // applied mid-answer still arrives with audio — decoded for
+                  // nothing unless the check is here too.
+                  console.log(`[VoiceAgent] Not playing audio index=${s.index} (sound off)`);
                 } else {
                   console.log(`[VoiceAgent] No audioData for index=${s.index}`);
                 }
@@ -611,6 +759,7 @@ export default function VoiceAgentPage() {
 
               case "done": {
                 if (myGen !== turnGenerationRef.current) break;
+                turnSettled = true;
                 stopThinkingTimer();
                 const d = parsed as DoneEvent;
                 setProcessing(false);
@@ -628,17 +777,53 @@ export default function VoiceAgentPage() {
                 break;
               }
 
+              case "notice": {
+                if (myGen !== turnGenerationRef.current) break;
+                // Not an error and not a `done`: the server ended the turn without
+                // an answer, and what it has to say is for the reader rather than
+                // the console. The turn comes back to idle here rather than in the
+                // catch below, because nothing threw. It settles the turn like a
+                // `done` does — the stream is about to end, and the end of it is
+                // not a separate fact to wait for.
+                turnSettled = true;
+                stopThinkingTimer();
+                setProcessing(false);
+                setProcessingStep("");
+                setNotice(noticeText(parsed as NoticeEvent));
+                break;
+              }
+
               case "error": {
                 if (myGen !== turnGenerationRef.current) break;
+                turnSettled = true;
                 const message = parsed.message || "Streaming error";
                 console.error("[VoiceAgent] SSE error:", message);
                 throw new Error(message);
               }
             }
-          } catch {
-            // Skip malformed SSE data
+          } catch (err) {
+            // Malformed SSE data is skipped. Anything the switch itself threw is
+            // not: `error` is reported by throwing, and swallowing that here made
+            // every failed turn silent — no message, and a spinner that never
+            // stopped, which is precisely what a user saw.
+            if (!(err instanceof SyntaxError)) throw err;
           }
         }
+      }
+
+      // The stream ended. If no event concluded the turn, it is still marked as
+      // running and the thinking counter is still climbing for a turn that is
+      // over — the state a client one build behind the server was left in when
+      // `notice` first appeared, since an unknown event name matches no case and
+      // the end of the stream was then nobody's business. Settle it here instead,
+      // and report it: a stream that ends with nothing to say is not a turn that
+      // succeeded. Skipped when a newer turn has taken over, which owns the state.
+      if (!turnSettled && myGen === turnGenerationRef.current) {
+        console.warn("[VoiceAgent] Stream ended without concluding the turn");
+        stopThinkingTimer();
+        setProcessing(false);
+        setProcessingStep("");
+        setError(t("errorAgentResponse"));
       }
     } catch (err) {
       if (myGen !== turnGenerationRef.current) return;
@@ -862,6 +1047,38 @@ export default function VoiceAgentPage() {
     setSpeakingMsgId(null);
   }
 
+  /**
+   * Turn playback on or off, and make the change take effect now: the ref is what
+   * the reading loop and the flush gate read, and cutting the sound short is the
+   * other half of the request — a switch that left the current sentence playing
+   * would be a switch to nothing.
+   *
+   * The per-message replay button is deliberately outside this. Clicking 🔊 on a
+   * message is a request for *that* message, so it plays whatever the mode and the
+   * mute say; this governs what arrives on its own.
+   */
+  function setWantsAudio(next: boolean) {
+    wantsAudioRef.current = next;
+    if (!next) {
+      stopSpeaking();
+    }
+  }
+
+  // What the controls show. `wantsAudioRef` is what playback obeys; this is the
+  // same rule for display, and every writer of one writes the other.
+  const wantsAudio = inputMode === "voice" && !muted;
+
+  /**
+   * What a `notice` event says, in the reader's language. The server sends a code
+   * *and* its own English wording, so the code wins where this build knows it and
+   * the wording is what an unrecognised one falls back to: a code added on the
+   * server reaches this client as English rather than as nothing.
+   */
+  function noticeText(n: NoticeEvent): string {
+    if (n.code === "no_speech") return t("noticeNoSpeech");
+    return n.message ?? "";
+  }
+
   // Configuration screen
   if (!config) {
     return (
@@ -999,7 +1216,7 @@ export default function VoiceAgentPage() {
                   }}
                   className="w-full min-h-[44px] rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                 >
-                  {PERSONAS.map((p) => (
+                  {personas.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.emoji} {p.label}
                     </option>
@@ -1007,13 +1224,13 @@ export default function VoiceAgentPage() {
                 </select>
               </div>
 
-              {getPersonaById(personaId)?.knowledgeTopics && (
+              {findPersona(personaId)?.knowledgeTopics && (
                 <div>
                   <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
                     Knowledge Topics
                   </label>
                   <div className="space-y-2">
-                    {getPersonaById(personaId)!.knowledgeTopics!.map((topic) => (
+                    {findPersona(personaId)!.knowledgeTopics!.map((topic) => (
                       <label
                         key={topic}
                         className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
@@ -1096,7 +1313,7 @@ export default function VoiceAgentPage() {
                 {t("title")}
               </h1>
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                {getPersonaById(config.personaId)?.emoji} {getPersonaById(config.personaId)?.label} ·{" "}
+                {personaFor(config.personaId).emoji} {personaFor(config.personaId).label} ·{" "}
                 {config.language === "english" ? "🇺🇸 English" : "🇻🇳 Vietnamese"} ·{" "}
                 {config.engine === "kokoro" ? "🎵 Kokoro" : config.engine === "piper" ? "🔊 Piper" : "🎙️ Supertonic"}
               </p>
@@ -1205,6 +1422,12 @@ export default function VoiceAgentPage() {
             </div>
           )}
 
+          {notice && (
+            <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+              {notice}
+            </div>
+          )}
+
           {error && (
             <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300">
               {error}
@@ -1217,11 +1440,15 @@ export default function VoiceAgentPage() {
 
       <footer className="border-t border-zinc-200 bg-white px-4 py-4 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto max-w-2xl">
-          <div className="mb-3 flex items-center justify-center gap-2">
+          <div className="mb-3 flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
               onClick={() => {
                 setInputMode("voice");
+                // Picking the voice mode is not the same as wanting to be spoken
+                // to: text mode's silence is the mode's, and this restores whatever
+                // the mute says separately.
+                setWantsAudio(!muted);
                 noteDraft("voice", textInput);
               }}
               className={`min-h-[44px] rounded-lg border px-3 py-1.5 text-sm ${
@@ -1236,6 +1463,10 @@ export default function VoiceAgentPage() {
               type="button"
               onClick={() => {
                 setInputMode("text");
+                // Text mode is silent, and it says so rather than being silent by
+                // accident: what is playing now stops, and the answer being streamed
+                // arrives as text. The 🔊 on any message is still the way to hear it.
+                setWantsAudio(false);
                 noteDraft("text", textInput);
               }}
               className={`min-h-[44px] rounded-lg border px-3 py-1.5 text-sm ${
@@ -1245,6 +1476,30 @@ export default function VoiceAgentPage() {
               }`}
             >
               ⌨️ {t("text")}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (wantsAudio) {
+                  setMuted(true);
+                  setWantsAudio(false);
+                  return;
+                }
+                // Turning sound back on says something about the mode too: sound
+                // only exists in the voice mode, so this is one control for one
+                // state rather than two controls that can disagree.
+                setInputMode("voice");
+                setMuted(false);
+                setWantsAudio(true);
+                noteDraft("voice", textInput);
+              }}
+              className={`min-h-[44px] rounded-lg border px-3 py-1.5 text-sm ${
+                wantsAudio
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              }`}
+            >
+              {wantsAudio ? t("soundOn") : t("soundOff")}
             </button>
           </div>
 

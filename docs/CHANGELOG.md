@@ -2,6 +2,33 @@
 
 > **Path migration note:** During the 2026-08 backend extraction, files under `src/app/api/*`, `src/lib/db.ts`, `src/lib/schema.ts`, `src/lib/ollama.ts`, `src/lib/evaluation.ts`, `src/lib/prompts.ts`, `src/lib/embeddings.ts`, `src/lib/seed.ts`, `src/lib/mcp/*`, and most of `src/lib/audio/*` moved to the standalone [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api) repository (default branch `master`). Historical entries below still name their original monolith paths. Current frontend files live under `src/app/*`, `src/components/*`, `src/lib/api-client.ts`, `src/lib/config/*`, `src/lib/types.ts`, `src/lib/use-playback-rate.ts`, and `src/lib/audio/sentence-queue.ts`.
 
+## 2026-09-21
+
+### Fix Missing Translation Keys Across Both Locales
+
+**Problem:** Six `t()` call sites referenced message keys that existed in neither `messages/en.json` nor `messages/vi.json`. Because `src/i18n/request.ts` configures no `getMessageFallback` or `onError`, next-intl falls back to rendering the raw key path and logging a console error — so users saw literal strings such as `voice.viewTranscript` and `setup.failedCreate` instead of a message. Most of the affected keys are on error paths, meaning they surfaced only when something had already gone wrong.
+
+**Solution:** Add the missing keys to both locales, placed beside their related siblings and worded to match the existing per-namespace conventions (e.g. `positions.failedLoad` → "Failed to load positions" / "Không thể tải vị trí").
+
+**What changed:**
+
+| Key | Call site | en | vi |
+|-----|-----------|----|----|
+| `voice.viewTranscript` | `interview/[id]/voice/page.tsx:846` | View Transcript | Xem bản ghi |
+| `setup.failedCreate` | `setup/SetupForm.tsx:55` | Failed to create session | Không thể tạo phiên phỏng vấn |
+| `setup.failedLoad` | `setup/page.tsx:38` | Failed to load setup data | Không thể tải dữ liệu thiết lập |
+| `dashboard.failedLoad` | `dashboard/page.tsx:45` | Failed to load sessions | Không thể tải phiên phỏng vấn |
+| `positions.add` | `positions/new/PositionForm.tsx:166` | Add | Thêm |
+| `common.failedCreate` | `campaigns/new/CampaignForm.tsx:77` | Failed to create | Không thể tạo |
+
+- `voice.viewTranscript` duplicates the wording already used by `transcript.viewTranscript` and `compare.viewTranscript`, keeping the three "View Transcript" links consistent.
+- `positions.add` follows `candidates.add` and `campaigns.add` (both "Add" / "Thêm"); `positions.addRequirement` held the same string but was never referenced by a `t()` call.
+- All six were pre-existing gaps, not introduced by the voice-agent work in the same change set.
+
+**Verification:** Repo-wide scan resolving every `useTranslations` / `getTranslations` namespace against both dictionaries reports no unresolved keys; `en.json` and `vi.json` key sets are identical (401 keys each).
+
+---
+
 ## 2026-09-17
 
 ### Auto-Start Voice Agent
