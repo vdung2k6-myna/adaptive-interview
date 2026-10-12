@@ -9,6 +9,7 @@ import { ScoreInput } from "@/components/ScoreInput";
 import { ModelBadge } from "@/components/ModelBadge";
 import { VersionHistory } from "@/components/VersionHistory";
 import { SentenceAudioQueue } from "@/lib/audio/sentence-queue";
+import { withSegmentMarks } from "@/lib/audio/spoken-highlight";
 import { apiFetch } from "@/lib/api-client";
 
 interface Message {
@@ -137,6 +138,8 @@ export default function TranscriptPage() {
   const [notes, setNotes] = useState("");
   const [copied, setCopied] = useState(false);
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  /** Index of the segment the queue is playing, or -1 when nothing is. */
+  const [speakCurrentIndex, setSpeakCurrentIndex] = useState(-1);
   const [messagePlaybackRates, setMessagePlaybackRates] = useState<
     Map<string, number>
   >(new Map());
@@ -151,6 +154,24 @@ export default function TranscriptPage() {
   const speakGenerationRef = useRef(0);
   /** True once the SSE speak-stream emits `event: done`. */
   const speakStreamDoneRef = useRef(false);
+  /** Every segment of the message being spoken, by index, for as long as that
+   * Speak session lasts — this is what locates the segment now playing in the
+   * message. `pendingChunksRef` cannot serve: it drops each chunk the moment it
+   * is enqueued, and it never holds one whose audio failed. */
+  const speakSegmentsRef = useRef<Map<number, string>>(new Map());
+  /** The message `speakSegmentsRef` holds segments for. */
+  const speakSegmentsMsgRef = useRef<string | null>(null);
+  /**
+   * The segments of that message that came back with no audio — the parts of the
+   * reply that were never spoken.
+   *
+   * Held apart from the spoken index because it is not a position: a segment with
+   * no audio is stepped over, so no `onStart` ever names it. It outlives the
+   * Speak session on purpose — a reply every one of whose segments failed never
+   * starts a queue, and that is the case where being told matters most — and is
+   * cleared when a fresh Speak on the message begins.
+   */
+  const unspokenSegmentsRef = useRef<Set<number>>(new Set());
 
   // Reorder buffer: holds chunks that arrived out-of-order until all
   // previous indices are ready, ensuring playback always starts from 0.
@@ -381,10 +402,18 @@ export default function TranscriptPage() {
     pendingChunksRef.current.clear();
     nextExpectedIndexRef.current = 0;
     speakStreamDoneRef.current = false;
+    // `speakSegmentsRef` and `unspokenSegmentsRef` are deliberately left alone:
+    // they are what marks the parts of a reply that were never spoken, and a
+    // reply whose every segment failed reaches here without ever having played a
+    // sound — clearing them would erase the report exactly when the listener
+    // heard nothing at all. A fresh Speak on the message replaces them.
+    setSpeakCurrentIndex(-1);
   }
 
   /** Flush pending chunks in strict index order starting from nextExpectedIndex.
-   *  Skips chunks where audio is null (TTS failed). */
+   *  A chunk whose audio is null has nothing to play and is not enqueued — but
+   *  it is not passed over in silence either: the sentence handler has already
+   *  recorded it as never spoken, which is what marks it in the transcript. */
   function flushPendingChunks() {
     if (!sentenceQueueRef.current) return;
     let idx = nextExpectedIndexRef.current;
@@ -418,6 +447,12 @@ export default function TranscriptPage() {
     if (speakingMsgId === msgId) return;
     setSpeakingMsgId(msgId);
 
+    // A fresh Speak on this message replaces what the last one recorded, so a
+    // mark that outlived its session is not carried into the next one.
+    speakSegmentsRef.current.clear();
+    speakSegmentsMsgRef.current = msgId;
+    unspokenSegmentsRef.current = new Set();
+
     // Create AudioContext on first Speak click
     if (!audioCtxRef.current) {
       const Ctx =
@@ -442,6 +477,10 @@ export default function TranscriptPage() {
     if (audioCtxRef.current) {
       sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
         playbackRate: playbackRate,
+        // The queue reaches a segment's audio exactly when the server's `text`
+        // event said it was next to be spoken, so this is what keeps the
+        // highlight on the segment being heard rather than on the whole reply.
+        onStart: (index) => setSpeakCurrentIndex(index),
         onFinished: () => {
           // Only tear down when the SSE stream has finished emitting chunks.
           // The queue can become momentarily empty while waiting for the next
@@ -504,6 +543,17 @@ export default function TranscriptPage() {
                 const s = parsed as { index: number; text: string; audioData: string | null };
                 if (seenSentenceIndicesRef.current.has(s.index)) break;
                 seenSentenceIndicesRef.current.add(s.index);
+                // Recorded whether or not this chunk has audio: a failed
+                // segment is still spoken text the highlight has to step over
+                // to reach the ones after it.
+                speakSegmentsRef.current.set(s.index, s.text);
+                // And recorded as never spoken, which is what marks it in the
+                // transcript. Nothing else in this loop can report it: the queue
+                // never reaches a segment with no audio, so no `onStart` for it
+                // arrives and no playback position ever names it.
+                if (!s.audioData) {
+                  unspokenSegmentsRef.current.add(s.index);
+                }
 
                 let audioBuffer: AudioBuffer | null = null;
                 if (s.audioData && audioCtxRef.current) {
@@ -674,6 +724,21 @@ export default function TranscriptPage() {
 
   const getMessagePlaybackRate = (msgId: string): number =>
     messagePlaybackRates.get(msgId) ?? 1;
+
+  /** The message's text as it should be rendered — with the segment now being
+   * read marked inside it, and with every segment that produced no audio marked
+   * as the part that was not spoken.
+   *
+   * The segments are those of the last Speak on this message, so the marks for
+   * what was never spoken outlive the session that found them; the playing one is
+   * marked only while this message is the one being spoken. */
+  function spokenContent(msg: { id: string; content: string }): string {
+    if (speakSegmentsMsgRef.current !== msg.id) return msg.content;
+    const currentIndex = msg.id === speakingMsgId ? speakCurrentIndex : -1;
+    const unspoken = [...unspokenSegmentsRef.current];
+    if (currentIndex < 0 && unspoken.length === 0) return msg.content;
+    return withSegmentMarks(msg.content, speakSegmentsRef.current, currentIndex, unspoken);
+  }
 
   const setMessagePlaybackRate = (msgId: string, rate: number) => {
     setMessagePlaybackRates((prev) => new Map(prev).set(msgId, rate));
@@ -863,7 +928,7 @@ export default function TranscriptPage() {
                     </div>
                     {msg.role === "interviewer" ? (
                       <div className="text-sm text-zinc-800 dark:text-zinc-200">
-                        <MarkdownRenderer content={msg.content} />
+                        <MarkdownRenderer content={spokenContent(msg)} />
                       </div>
                     ) : (
                       <p className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap">
