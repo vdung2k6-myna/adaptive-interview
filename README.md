@@ -117,7 +117,7 @@ src/
     ├── types.ts                  # Lightweight TypeScript interfaces
     ├── use-playback-rate.ts      # Persistent AI voice playback-rate hook
     └── audio/
-        └── sentence-queue.ts     # Client-side sequential audio playback
+        └── sentence-queue.ts     # Client-side sequential playback: a reply's sentences, and a track the platform chose, fetched with this page's own credential
 ```
 
 The backend's route handlers, business logic, database schema, and audio services live in `adaptive-interview-api/`. See [backend docs](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/ARCHITECTURE.md).

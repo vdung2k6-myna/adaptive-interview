@@ -128,6 +128,20 @@ interface DoneEvent {
   fullText: string;
 }
 
+/**
+ * A track the platform chose, as it announces it.
+ *
+ * A URL rather than audio: a track is minutes, and sending it inline would be megabytes through an
+ * event stream built for sentences. It carries the index it is to be played at — one past the
+ * reply's last sentence — so the queue's own cursor keeps the reply and the track in the order the
+ * platform meant, rather than in the order two callbacks happened to fire.
+ */
+interface MusicEvent {
+  index: number;
+  url: string;
+  title: string;
+}
+
 interface UserEvent {
   text: string;
   messageId: string;
@@ -190,7 +204,9 @@ export default function VoiceAgentPage() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sentenceQueueRef = useRef<SentenceAudioQueue | null>(null);
   const pendingChunksRef = useRef<
-    Map<number, { audio: AudioBuffer | null; text: string }>
+    // A URL as well as a buffer, because a track arrives as one — the queue fetches it with this
+    // page's authenticated fetch, and the map is what keeps it in the reply's own order.
+    Map<number, { audio: AudioBuffer | string | null; text: string }>
   >(new Map());
   const nextExpectedIndexRef = useRef(0);
   const seenSentenceIndicesRef = useRef(new Set<number>());
@@ -455,7 +471,9 @@ export default function VoiceAgentPage() {
       // The index still advances either way: the queue's cursor is what keeps the
       // chunks in order, and a skipped one must not leave a hole in it.
       if (chunk.audio && wantsAudioRef.current) {
-        console.log(`[VoiceAgent] Enqueue index=${idx} duration=${chunk.audio.duration} text="${chunk.text.substring(0, 40)}"`);
+        const what =
+          typeof chunk.audio === "string" ? `track ${chunk.audio}` : `duration=${chunk.audio.duration}`;
+        console.log(`[VoiceAgent] Enqueue index=${idx} ${what} text="${chunk.text.substring(0, 40)}"`);
         sentenceQueueRef.current.enqueue(idx, chunk.audio, chunk.text);
       } else {
         console.log(`[VoiceAgent] Skip index=${idx} (${chunk.audio ? "not playing" : "no audio"}) text="${chunk.text.substring(0, 40)}"`);
@@ -709,6 +727,21 @@ export default function VoiceAgentPage() {
                 setProcessingStep(t("agentThinking"));
                 setThinkingElapsed(0);
                 startThinkingTimer();
+                break;
+              }
+
+              case "music": {
+                // The track the platform chose. It goes through the same pending map as a
+                // sentence, at the index the platform gave it, so the queue plays it after the
+                // reply it follows rather than wherever this callback landed.
+                if (myGen !== turnGenerationRef.current) break;
+                const m = parsed as MusicEvent;
+                console.log(`[VoiceAgent] SSE music index=${m.index} title="${m.title}"`);
+                pendingChunksRef.current.set(m.index, { audio: m.url, text: m.title });
+                flushPendingChunks();
+                // In the transcript beside the sentences, so what the person reads matches what
+                // they are hearing — and not added to the reply's own text, which is the model's.
+                setStreamItems((prev) => [...prev, { index: m.index, text: m.title, audioUrl: m.url }]);
                 break;
               }
 
