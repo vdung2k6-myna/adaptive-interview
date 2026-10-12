@@ -476,6 +476,7 @@ export default function TranscriptPage() {
     // Create sentence queue for this speak session
     if (audioCtxRef.current) {
       sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
+        fetch: apiFetch,
         playbackRate: playbackRate,
         // The queue reaches a segment's audio exactly when the server's `text`
         // event said it was next to be spoken, so this is what keeps the

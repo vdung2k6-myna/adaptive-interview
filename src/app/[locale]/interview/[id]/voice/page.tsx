@@ -252,6 +252,7 @@ export default function VoiceInterviewPage() {
     }
     if (audioCtxRef.current) {
       sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
+        fetch: apiFetch,
         playbackRate,
         onStart: (index) => {
           setQueueCurrentIndex(index);
@@ -390,6 +391,7 @@ export default function VoiceInterviewPage() {
       });
 
       sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
+        fetch: apiFetch,
         playbackRate,
         onStart: (index) => {
           setQueueCurrentIndex(index);

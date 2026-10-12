@@ -3,24 +3,18 @@
  *
  *   node --test src/lib/audio/sentence-queue.test.ts
  *
- * The queue takes its AudioContext as a constructor parameter, and the audio
- * fetch through the global one, so both are stood in for here: a segment that
- * cannot be played has to be observable without a browser and without a server.
+ * The queue takes its AudioContext and its fetch as constructor parameters, so both
+ * are stood in for here: a segment that cannot be played has to be observable without
+ * a browser, without a server, and without touching a global.
  *
  * What this suite pins is the rule the recovery is built on top of rather than
  * around — a failed segment is skipped and the sequence advances, so the failure
  * costs one sentence instead of the rest of the answer. Recovery replaces the
  * answer; it does not replace this.
  */
-import { describe, it, afterEach } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { SentenceAudioQueue } from "./sentence-queue.ts";
-
-const realFetch = globalThis.fetch;
-
-afterEach(() => {
-  globalThis.fetch = realFetch;
-});
+import { SentenceAudioQueue, type QueueFetch } from "./sentence-queue.ts";
 
 /** A buffer source that ends as soon as it starts, so the queue advances without
  * a clock. How long a segment plays is not what this suite is about. */
@@ -55,14 +49,16 @@ function fakeAudioContext(options: { decodeFails?: boolean } = {}) {
 }
 
 /** Answer every audio request, except the URLs in `missing`, which answer the
- * 404 that a swept segment file answers with. */
+ * 404 that a swept segment file answers with — and, since the mount that serves them
+ * now wears the API's credential, stand in for an *authenticated* caller: the queue
+ * is handed a fetch, so what it sends is whatever this function does. */
 function fakeFetch(missing: Set<string> = new Set()) {
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  return (async (input: string) => {
     if (missing.has(String(input))) {
       return { ok: false, status: 404 } as Response;
     }
     return { ok: true, arrayBuffer: async () => new ArrayBuffer(8) } as unknown as Response;
-  }) as typeof fetch;
+  }) as QueueFetch;
 }
 
 interface Recorded {
@@ -72,8 +68,10 @@ interface Recorded {
   done: Promise<void>;
 }
 
-/** Drive a three-segment answer and record what the queue reported. */
-function playThree(options: { decodeFails?: boolean } = {}): Recorded {
+/** Drive a three-segment answer and record what the queue reported. The fetch is
+ * **required** rather than defaulted, so that each test says which caller it is standing
+ * in for — the queue's own option is required for the same reason. */
+function playThree(options: { fetchAudio: QueueFetch; decodeFails?: boolean }): Recorded {
   const started: number[] = [];
   const errored: number[] = [];
   let finished = 0;
@@ -84,6 +82,7 @@ function playThree(options: { decodeFails?: boolean } = {}): Recorded {
   });
 
   const queue = new SentenceAudioQueue(fakeAudioContext(options), {
+    fetch: options.fetchAudio,
     onStart: (index) => started.push(index),
     onError: (index) => errored.push(index),
     onFinished: () => {
@@ -105,8 +104,7 @@ describe("a segment that cannot be played", () => {
   it("is reported at its own index, and does not cost the segments after it", async () => {
     // The failure the whole change exists for: a segment's fetch losing to the
     // server having removed the file. It must cost that one sentence.
-    fakeFetch(new Set(["/audio/two.wav"]));
-    const r = playThree();
+    const r = playThree({ fetchAudio: fakeFetch(new Set(["/audio/two.wav"])) });
 
     await r.done;
 
@@ -123,8 +121,7 @@ describe("a segment that cannot be played", () => {
     // The other way a segment fails, which reaches the same callback — and which
     // the recovery treats the same way, since from the candidate's side a segment
     // that did not play is a segment that did not play.
-    fakeFetch();
-    const r = playThree({ decodeFails: true });
+    const r = playThree({ fetchAudio: fakeFetch(), decodeFails: true });
 
     await r.done;
 

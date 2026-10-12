@@ -562,6 +562,7 @@ export default function VoiceAgentPage() {
 
     if (audioCtxRef.current) {
       sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
+        fetch: apiFetch,
         onStart: (index) => {
           console.log(`[VoiceAgent] Audio started index=${index}`);
           setQueueIsPlaying(true);
@@ -907,6 +908,7 @@ export default function VoiceAgentPage() {
 
     if (audioCtxRef.current) {
       sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
+        fetch: apiFetch,
         onFinished: () => {
           if (speakStreamDoneRef.current) {
             cleanupSpeakState();

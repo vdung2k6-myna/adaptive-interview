@@ -15,9 +15,26 @@ export interface SentenceQueueCallbacks {
   onFinished?: () => void;
 }
 
+/** The fetch this queue calls for a sentence it is given as a URL: the page's
+ *  authenticated wrapper, so a stored recording is read with the same credential every
+ *  other API resource is read with. Named as `persona-catalog.ts` names its own, for
+ *  the same reason — a module that is handed a fetch does not have to know how its
+ *  caller authenticates. */
+export type QueueFetch = (url: string) => Promise<Response>;
+
 export interface SentenceQueueOptions extends SentenceQueueCallbacks {
   /** Playback rate. 1.0 = normal, <1.0 = slower, >1.0 = faster. Default: 1.0 */
   playbackRate?: number;
+  /**
+   * The authenticated fetch (`apiFetch`), for the items that arrive as a URL.
+   *
+   * **Not optional, and that is the point.** A queue that quietly fell back to the
+   * global `fetch` would send no credential, be refused with a 401, and report the
+   * sentence as an error — the page would simply stop speaking, on a deployment whose
+   * recordings are no longer readable by their URL alone. A default here would be a
+   * silent wrong answer, so a caller has to state one.
+   */
+  fetch: QueueFetch;
 }
 
 interface QueueItem {
@@ -35,15 +52,19 @@ export class SentenceAudioQueue {
   private currentIndex = -1;
   private callbacks: SentenceQueueCallbacks;
   private playbackRate: number;
+  /** The caller's authenticated fetch, held under a name of its own so that no call
+   *  site can mistake it for the global one — see `SentenceQueueOptions.fetch`. */
+  private fetchAudio: QueueFetch;
   /** Generation counter — incremented on stop() to cancel in-flight async work. */
   private liveGeneration = 0;
   /** Timer ID for the punctuation-pause setTimeout, so stop() can clear it. */
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(audioCtx: AudioContext, options: SentenceQueueOptions = {}) {
+  constructor(audioCtx: AudioContext, options: SentenceQueueOptions) {
     this.audioCtx = audioCtx;
-    const { playbackRate = 1.0, ...callbacks } = options;
+    const { playbackRate = 1.0, fetch: fetchAudio, ...callbacks } = options;
     this.playbackRate = playbackRate;
+    this.fetchAudio = fetchAudio;
     this.callbacks = callbacks;
   }
 
@@ -127,7 +148,7 @@ export class SentenceAudioQueue {
     if (this.preloaded.has(index) || myGen !== this.liveGeneration) return;
 
     try {
-      const res = await fetch(url);
+      const res = await this.fetchAudio(url);
       if (!res.ok || myGen !== this.liveGeneration) return;
 
       const arrayBuffer = await res.arrayBuffer();
@@ -180,7 +201,7 @@ export class SentenceAudioQueue {
 
       if (!audioBuffer) {
         try {
-          const res = await fetch(item.audio);
+          const res = await this.fetchAudio(item.audio);
           if (myGen !== this.liveGeneration) return;
 
           if (!res.ok) {
