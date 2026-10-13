@@ -28,7 +28,8 @@ export const DEFAULT_ANSWER_MODE: AnswerMode = "generate";
  * connection and then says nothing would hold the page at "starting" for as long
  * as the socket allows. Overridable through
  * `NEXT_PUBLIC_PERSONA_CATALOG_TIMEOUT_MS`, and short by default because the
- * fallback is good: the same personas the catalog now seeds.
+ * fallback is good: the personas the built-in list holds, which the catalog
+ * covers — it may serve more than this list does, but never fewer.
  */
 export const DEFAULT_CATALOG_TIMEOUT_MS = 3_000;
 
@@ -125,9 +126,9 @@ export function toCatalogPersona(raw: unknown): CatalogPersona | null {
  * An **empty** array is treated as unusable rather than as an authoritative "no
  * personas": a catalog is seeded with the schema, so a deployment that reports
  * none is broken rather than deciding to offer none, and the page would otherwise
- * render no options and start no session. The trade is deliberate — the built-in
- * list is the same set the catalog seeds, so falling back cannot offer a persona
- * the platform does not have.
+ * render no options and start no session. The trade is deliberate — the catalog
+ * serves every persona the built-in list holds, and may serve personas beyond it,
+ * so falling back cannot offer a persona the platform does not have.
  */
 export function parseCatalog(body: unknown): CatalogPersona[] | null {
   if (!Array.isArray(body)) return null;
