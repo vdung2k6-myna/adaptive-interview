@@ -8,6 +8,7 @@ import AudioRecorder from "@/components/AudioRecorder";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { SentenceAudioQueue } from "@/lib/audio/sentence-queue";
 import { apiFetch } from "@/lib/api-client";
+import { fetchLibrary, type LibraryTrack } from "@/lib/music-library";
 import {
   createVoicePrefetch,
   shouldPrefetch,
@@ -23,6 +24,37 @@ import {
 import { PERSONAS, getPersonaById, type Persona } from "./personas";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+
+/**
+ * Where a track the person picked sits in the queue's index space.
+ *
+ * The queue plays in the order things are enqueued, so this is not a cursor — but it *is* keyed on: a
+ * URL item is preloaded under its index, and an index shared with a sentence chunk that is still queued
+ * would let that chunk be played from the track's own buffer. Sentences are chunked from zero and a
+ * reply is not a million characters, so everything at or above this is a track and nothing else is.
+ */
+const MUSIC_INDEX_BASE = 1_000_000;
+
+/**
+ * A track's URL, as the queue needs it.
+ *
+ * The server answers a path on **itself** — `/audio/music/<file>` — and this page is served from
+ * somewhere else, so the path has to be given the API's own origin before anything fetches it: a bare
+ * path resolves against the page, which serves no recordings and refuses that path with a 401, which the
+ * queue then reports as a track that is gone. `apiFetch` adds the credential and does not change the
+ * origin, which is why this cannot live there.
+ */
+function trackUrl(path: string): string {
+  return path.startsWith("/") ? `${BACKEND_URL}${path}` : path;
+}
+
+/**
+ * How many tracks the list shows at once.
+ *
+ * A few hundred tracks is a list to read a page at a time rather than one to scroll past, and five is
+ * small enough to take in at a glance on a phone.
+ */
+const MUSIC_PAGE_SIZE = 5;
 
 /**
  * How long the page waits for the persona catalog before offering its built-in
@@ -200,6 +232,15 @@ export default function VoiceAgentPage() {
   const [thinkingElapsed, setThinkingElapsed] = useState(0);
   const thinkingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // The music the deployment holds, and the track out of it the person started. Kept apart from the
+  // conversation on purpose: neither is a message, and a track the person picked is not something the
+  // model said. `music` is `null` while it is being read, which is the whole of this surface's loading
+  // state.
+  const [musicOpen, setMusicOpen] = useState(false);
+  const [music, setMusic] = useState<{ tracks: LibraryTrack[]; report: string | null } | null>(null);
+  const [musicPage, setMusicPage] = useState(1);
+  const [playingTrack, setPlayingTrack] = useState<LibraryTrack | null>(null);
+
   // Audio refs
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sentenceQueueRef = useRef<SentenceAudioQueue | null>(null);
@@ -260,6 +301,128 @@ export default function VoiceAgentPage() {
     } else {
       getPrefetch().cancel();
     }
+  }
+
+  /**
+   * The queue audio plays through, made fresh for what is about to play.
+   *
+   * One queue for the whole page — the reply's sentences, a track the model chose, and a track the
+   * person chose out of the library — because there is one speaker, and two queues would talk over
+   * each other. A turn makes its own before it asks for anything; this is that same construction, so a
+   * tap outside a turn plays through the queue the reply is already in and takes its place at the end
+   * of it.
+   *
+   * `setPlayingTrack(null)` on finish and on failure is why one callback serves both callers: on a
+   * turn it clears a `null`, and on a track the person started it takes down the strip that names it —
+   * when the track ends, and when the library no longer serves it.
+   */
+  function makeQueue(): SentenceAudioQueue | null {
+    if (!audioCtxRef.current) return null;
+
+    sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
+      fetch: apiFetch,
+      onStart: (index) => {
+        console.log(`[VoiceAgent] Audio started index=${index}`);
+        setQueueIsPlaying(true);
+      },
+      onEnd: (index) => {
+        console.log(`[VoiceAgent] Audio ended index=${index}`);
+      },
+      onFinished: () => {
+        console.log(`[VoiceAgent] Audio queue finished`);
+        setQueueIsPlaying(false);
+        setPlayingTrack(null);
+      },
+      onError: (index, err) => {
+        console.warn(`[VoiceAgent] Audio error index=${index}:`, err);
+        setQueueIsPlaying(false);
+        if (index >= MUSIC_INDEX_BASE) {
+          // A track the person started, which the library no longer serves: named as gone rather than
+          // left as a strip claiming to play something that is not playing (design D2).
+          setPlayingTrack(null);
+          setNotice(t("musicGone"));
+        }
+      },
+    });
+
+    return sentenceQueueRef.current;
+  }
+
+  /**
+   * Show the music the deployment holds.
+   *
+   * Read when asked, and not held from earlier in the visit: the directory is allowed to change while
+   * the platform runs, so a list read at the start of a session can name tracks that are no longer
+   * there. The answer is the server's — the tracks, or the reason there are none (design D1) — and
+   * reading is what a `null` in the state means.
+   */
+  async function toggleMusic() {
+    if (musicOpen) {
+      setMusicOpen(false);
+      return;
+    }
+
+    setMusicOpen(true);
+    setMusic(null);
+    setMusicPage(1);
+    setMusic(await fetchLibrary(`${BACKEND_URL}/api/music`, apiFetch));
+  }
+
+  /**
+   * Play a track the person picked, by the URL they were shown.
+   *
+   * Enqueued at the end of whatever is playing, which is what puts it after a reply that is still being
+   * spoken rather than over it — the ordering a track the model chose reaches by being sent after the
+   * reply's sentences, reached here by being appended to their queue. No model is asked: the person has
+   * already chosen (design D4).
+   */
+  async function playFromLibrary(track: LibraryTrack, at: number) {
+    await initAudioContext();
+
+    const queue = sentenceQueueRef.current ?? makeQueue();
+    if (!queue) return;
+
+    queue.enqueue(MUSIC_INDEX_BASE + at, trackUrl(track.url), track.title);
+    setPlayingTrack(track);
+  }
+
+  /**
+   * Stop what the person started.
+   *
+   * The page's other stop paths cancel a *turn* — an abort of the stream and the queue that belongs to
+   * it — and a track picked from the library outside a turn is not one, which is what this is for. It
+   * stops the one queue, so a reply still being spoken stops with it: one speaker, and the person asked
+   * for silence (design D4, D5).
+   */
+  function stopPlaying() {
+    sentenceQueueRef.current?.stop();
+    setQueueIsPlaying(false);
+    setPlayingTrack(null);
+  }
+
+  /**
+   * One page of the library, and where that page sits in the whole of it.
+   *
+   * The page a person is on is clamped here rather than where it is set, so that a list that shrank
+   * under them — a track deleted while the panel was open — leaves them on the last page there is
+   * rather than on one that is empty. `at` is a track's position in the *whole* library and not on the
+   * page: it is the index the queue is handed the item by, and the queue's own logs are read by it.
+   */
+  function pageOf(tracks: LibraryTrack[], page: number) {
+    const last = Math.max(1, Math.ceil(tracks.length / MUSIC_PAGE_SIZE));
+    const current = Math.min(Math.max(1, page), last);
+    const from = (current - 1) * MUSIC_PAGE_SIZE;
+
+    return {
+      current,
+      last,
+      from: from + 1,
+      to: Math.min(from + MUSIC_PAGE_SIZE, tracks.length),
+      total: tracks.length,
+      items: tracks
+        .slice(from, from + MUSIC_PAGE_SIZE)
+        .map((track, offset) => ({ track, at: from + offset })),
+    };
   }
 
   // Leaving the page must not leave the agent talking to an empty room. React
@@ -578,26 +741,10 @@ export default function VoiceAgentPage() {
       sentenceQueueRef.current.stop();
     }
 
-    if (audioCtxRef.current) {
-      sentenceQueueRef.current = new SentenceAudioQueue(audioCtxRef.current, {
-        fetch: apiFetch,
-        onStart: (index) => {
-          console.log(`[VoiceAgent] Audio started index=${index}`);
-          setQueueIsPlaying(true);
-        },
-        onEnd: (index) => {
-          console.log(`[VoiceAgent] Audio ended index=${index}`);
-        },
-        onFinished: () => {
-          console.log(`[VoiceAgent] Audio queue finished`);
-          setQueueIsPlaying(false);
-        },
-        onError: (index, err) => {
-          console.warn(`[VoiceAgent] Audio error index=${index}:`, err);
-          setQueueIsPlaying(false);
-        },
-      });
-    }
+    // A turn takes the speaker: a track the person started out of the library stops here, and the strip
+    // that names it comes down, because what is playing from now on is the reply.
+    setPlayingTrack(null);
+    makeQueue();
 
     // Reset per-turn streaming state
     seenSentenceIndicesRef.current.clear();
@@ -737,7 +884,9 @@ export default function VoiceAgentPage() {
                 if (myGen !== turnGenerationRef.current) break;
                 const m = parsed as MusicEvent;
                 console.log(`[VoiceAgent] SSE music index=${m.index} title="${m.title}"`);
-                pendingChunksRef.current.set(m.index, { audio: m.url, text: m.title });
+                // `trackUrl`, not the path as sent: the queue fetches it, and a path on the API
+                // resolved against this page is a 401 — see where `trackUrl` is defined.
+                pendingChunksRef.current.set(m.index, { audio: trackUrl(m.url), text: m.title });
                 flushPendingChunks();
                 // In the transcript beside the sentences, so what the person reads matches what
                 // they are hearing — and not added to the reply's own text, which is the model's.
@@ -1337,6 +1486,11 @@ export default function VoiceAgentPage() {
     );
   }
 
+  // What the list is showing. Derived rather than stored: which page a person is on is state, and the
+  // tracks that page holds are not.
+  const libraryPage =
+    music !== null && music.report === null ? pageOf(music.tracks, musicPage) : null;
+
   // Chat screen
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950">
@@ -1536,7 +1690,89 @@ export default function VoiceAgentPage() {
             >
               {wantsAudio ? t("soundOn") : t("soundOff")}
             </button>
+            <button
+              type="button"
+              onClick={() => void toggleMusic()}
+              className={`min-h-[44px] rounded-lg border px-3 py-1.5 text-sm ${
+                musicOpen
+                  ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
+                  : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              }`}
+            >
+              🎵 {t("music")}
+            </button>
           </div>
+
+          {playingTrack && (
+            <div className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800">
+              <span className="truncate text-zinc-800 dark:text-zinc-200">
+                🎵 {t("musicNowPlaying", { title: playingTrack.title })}
+              </span>
+              <button
+                type="button"
+                onClick={stopPlaying}
+                className="shrink-0 text-xs leading-none text-red-600 dark:text-red-400"
+              >
+                ⏹ {t("stop")}
+              </button>
+            </div>
+          )}
+
+          {musicOpen && (
+            <div className="mb-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-800">
+              {music === null ? (
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("musicReading")}</p>
+              ) : music.report !== null ? (
+                // What the server said about there being nothing: a deployment with no library is a
+                // sentence, and an empty list would read as a shelf that happens to be empty.
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">{music.report}</p>
+              ) : libraryPage ? (
+                <>
+                  <ul className="space-y-1">
+                    {libraryPage.items.map(({ track, at }) => (
+                      <li key={track.url}>
+                        <button
+                          type="button"
+                          onClick={() => void playFromLibrary(track, at)}
+                          className="w-full truncate rounded px-2 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                        >
+                          {playingTrack?.url === track.url ? `▶ ${track.title}` : track.title}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {libraryPage.last > 1 && (
+                    <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-200 pt-2 text-xs dark:border-zinc-700">
+                      <button
+                        type="button"
+                        onClick={() => setMusicPage(libraryPage.current - 1)}
+                        disabled={libraryPage.current <= 1}
+                        className="min-h-[32px] rounded px-2 text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                      >
+                        {t("musicPrev")}
+                      </button>
+                      <span className="text-zinc-500 dark:text-zinc-400">
+                        {t("musicRange", {
+                          from: libraryPage.from,
+                          to: libraryPage.to,
+                          total: libraryPage.total,
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setMusicPage(libraryPage.current + 1)}
+                        disabled={libraryPage.current >= libraryPage.last}
+                        className="min-h-[32px] rounded px-2 text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                      >
+                        {t("musicNext")}
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+          )}
 
           {inputMode === "voice" ? (
             <AudioRecorder
