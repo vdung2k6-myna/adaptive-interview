@@ -20,6 +20,16 @@ import {
 import { apiFetch } from "@/lib/api-client";
 import { usePlaybackRate } from "@/lib/use-playback-rate";
 
+/**
+ * The platform's own address, read once.
+ *
+ * Two things need it and they are not the same kind of thing: the API calls this page makes,
+ * and a message's recording, which the platform answers as a path on itself — `AudioPlayer`
+ * cannot fetch that without the origin in front of it (see `lib/audio/session-recording.ts`).
+ * Read in both places rather than twice, so there is one answer to "where is the platform".
+ */
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+
 interface VoiceMessage {
   id: string;
   role: "interviewer" | "candidate";
@@ -462,8 +472,7 @@ export default function VoiceInterviewPage() {
 
     try {
       // Direct backend URL to bypass Next.js dev proxy buffering.
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-      const res = await apiFetch(`${backendUrl}/api/voice/stream`, {
+      const res = await apiFetch(`${BACKEND_URL}/api/voice/stream`, {
         method: "POST",
         body: formData,
         signal: turnAbortCtrl.signal,
@@ -823,6 +832,7 @@ export default function VoiceInterviewPage() {
             <AudioPlayer
               key={msg.id}
               audioUrl={msg.audioUrl || ""}
+              origin={BACKEND_URL}
               transcript={msg.content}
               role={msg.role}
             />

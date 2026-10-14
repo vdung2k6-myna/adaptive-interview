@@ -3,14 +3,28 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
+import { obtainRecording } from "@/lib/audio/session-recording";
+import { apiFetch } from "@/lib/api-client";
 
 interface AudioPlayerProps {
+  /** The path the session's message carries — not a URL this element may be handed. */
   audioUrl: string;
   transcript: string;
   role?: "interviewer" | "candidate";
+  /** The platform's own origin, for a recording the message names as a path. */
+  origin: string;
 }
 
-export default function AudioPlayer({ audioUrl, transcript, role = "interviewer" }: AudioPlayerProps) {
+/**
+ * One message's recording, played.
+ *
+ * A shell over `lib/audio/session-recording.ts`, and deliberately nothing more. What it must
+ * not do is what it used to: hand the message's path to `<audio src>`, which sends no
+ * credential and is refused — the element cannot be given one. So the recording is fetched
+ * through the authenticated request and the element is given the object URL instead, which is
+ * this component's entire share of that problem.
+ */
+export default function AudioPlayer({ audioUrl, origin, transcript, role = "interviewer" }: AudioPlayerProps) {
   const t = useTranslations("voice");
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -18,6 +32,9 @@ export default function AudioPlayer({ audioUrl, transcript, role = "interviewer"
   const [currentTime, setCurrentTime] = useState(0);
   const [showTranscript, setShowTranscript] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  /** What the element is given: a `blob:` URL for a recording that was obtained, and nothing
+   *  otherwise. Empty is the unavailable state this component already had. */
+  const [src, setSrc] = useState("");
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -27,7 +44,50 @@ export default function AudioPlayer({ audioUrl, transcript, role = "interviewer"
     isDraggingRef.current = isDragging;
   }, [isDragging]);
 
-  // Sync progress from audio time, but skip while user is dragging
+  // Obtain the recording, and give back its object URL when this effect's bytes stop being the
+  // ones on screen. The URL pins the bytes until it is revoked, and nothing in the module can
+  // know when playback is over, so the ownership passes here with the URL.
+  useEffect(() => {
+    if (audioUrl === "") {
+      setSrc("");
+      return;
+    }
+
+    let live = true;
+    let held: string | null = null;
+
+    obtainRecording(audioUrl, { origin, fetch: apiFetch }).then((outcome) => {
+      if (!live) {
+        // Asked for, answered, and no longer wanted — a change of message, or an unmount.
+        if (outcome.ok) URL.revokeObjectURL(outcome.url);
+        return;
+      }
+      if (outcome.ok) {
+        held = outcome.url;
+        setSrc(outcome.url);
+      } else {
+        // The person is shown the sentence below, which does not depend on why; this is the
+        // diagnosis, for whoever is reading the console.
+        console.warn("[AudioPlayer] The recording could not be obtained:", outcome.detail);
+        setSrc("");
+      }
+    });
+
+    return () => {
+      live = false;
+      if (held !== null) {
+        URL.revokeObjectURL(held);
+        held = null;
+      }
+    };
+  }, [audioUrl, origin]);
+
+  // Sync progress from audio time, but skip while user is dragging.
+  //
+  // Keyed on `src` and not on the message: the element is not in the tree until a recording has
+  // been obtained, so the run that first finds it there is the one that follows `src` changing
+  // from empty to a `blob:` URL. Keyed on the message, this would attach to nothing on mount and
+  // never run again — the transport would sit there while the recording played unheard of.
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -61,7 +121,7 @@ export default function AudioPlayer({ audioUrl, transcript, role = "interviewer"
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
     };
-  }, [audioUrl]);
+  }, [src]);
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -119,19 +179,22 @@ export default function AudioPlayer({ audioUrl, transcript, role = "interviewer"
   const borderColor = role === "interviewer"
     ? "border-zinc-200 dark:border-zinc-700"
     : "border-zinc-900 dark:border-zinc-500";
+  /** No recording is to be had: the message carries none, or the platform would not give one
+   *  up. One state rather than two, because the person is owed the same sentence either way. */
+  const unavailable = audioUrl === "" || src === "";
 
   return (
     <div className={`rounded-2xl border ${borderColor} bg-white p-4 dark:bg-zinc-900`}>
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{label}</span>
-        {audioUrl === "" && (
+        {unavailable && (
           <span className="text-xs text-amber-600 dark:text-amber-400">{t("audioUnavailable")}</span>
         )}
       </div>
 
-      {audioUrl && (
+      {!unavailable && (
         <>
-          <audio ref={audioRef} src={audioUrl} preload="metadata" />
+          <audio ref={audioRef} src={src} preload="metadata" />
 
           <div className="flex items-center gap-3">
             <button
