@@ -8,6 +8,13 @@ This repository contains the **Next.js frontend**. The API backend lives in the 
 
 ---
 
+## Demo
+
+![The voice agent mid-conversation](docs/assets/voice-agent.gif)
+
+A live turn on the **voice agent** page: a persona is bound for the conversation, the agent's reply
+is written into the transcript, and the mode controls sit below it — voice, text, sound and music.
+
 ## Features
 
 - **Adaptive AI Interviewer** — Each question is generated on-the-fly based on the candidate's skills, experience, CV, and the position's requirements
