@@ -3,6 +3,7 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { encodeWav } from "@/lib/audio/capture-format";
+import { paceOf, type AnswerPace } from "@/lib/audio/answer-pacing";
 
 interface AudioRecorderProps {
   onRecordingComplete: (blob: Blob, durationMs: number) => void;
@@ -11,6 +12,21 @@ interface AudioRecorderProps {
 }
 
 type RecorderState = "idle" | "recording" | "stopped";
+
+/** What the display says as an answer passes each mark of the length the interviewer asked for. */
+const PACE_MESSAGE: Record<AnswerPace, string> = {
+  short: "answerPaceShort",
+  expected: "answerPaceExpected",
+  long: "answerPaceLong",
+};
+
+/** How it says it. The words carry the meaning; the tone only makes it legible at a glance, and
+ *  `short` is the quiet one because there is nothing to say yet. */
+const PACE_TONE: Record<AnswerPace, string> = {
+  short: "text-zinc-500 dark:text-zinc-400",
+  expected: "text-emerald-600 dark:text-emerald-400",
+  long: "text-amber-600 dark:text-amber-400",
+};
 
 /**
  * What the browser records into on its way to being re-encoded.
@@ -215,6 +231,12 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
     return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
   };
 
+  /** Where this answer stands against what the interviewer asked for. Read, never acted on:
+   *  nothing below this line stops a recording, disables a control, or bounds how long a person
+   *  may speak — the expectation is shown so they can pace themselves, and the decision stays
+   *  theirs. See the `answer-pacing` capability. */
+  const pace = paceOf(durationMs);
+
   return (
     <div className="w-full">
       {state === "idle" && (
@@ -248,9 +270,20 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
             ))}
           </div>
 
-          <p className="mb-4 text-center text-2xl font-mono text-zinc-900 dark:text-zinc-50">
-            {formatTime(durationMs)}
-          </p>
+          <div className="mb-4 text-center">
+            <p
+              className={`text-2xl font-mono ${
+                pace === "long"
+                  ? "text-amber-600 dark:text-amber-400"
+                  : "text-zinc-900 dark:text-zinc-50"
+              }`}
+            >
+              {formatTime(durationMs)}
+            </p>
+            {/* The clock, and the length that was asked for, together while the person is still
+                speaking — so they can pace themselves without the platform having to say anything. */}
+            <p className={`mt-1 text-sm ${PACE_TONE[pace]}`}>{t(PACE_MESSAGE[pace])}</p>
+          </div>
 
           <div className="flex justify-center gap-3">
             <button
