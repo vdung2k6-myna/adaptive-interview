@@ -498,7 +498,10 @@ export default function TranscriptPage() {
     speakAbortRef.current = abortCtrl;
 
     try {
-      // Direct backend URL to bypass Next.js dev proxy buffering.
+      // The platform's own origin, rather than a relative path: on a local run that keeps this
+      // request out of the dev server's rewrite and its request buffering. On a built deployment
+      // the setting names this page's own origin, so it is proxied like every other call and this
+      // is not a bypass. The duplicate reading of the setting is not settled here.
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
       const res = await apiFetch(`${backendUrl}/api/voice/speak-stream`, {
         method: "POST",

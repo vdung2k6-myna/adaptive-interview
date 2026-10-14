@@ -471,7 +471,10 @@ export default function VoiceInterviewPage() {
     turnAbortRef.current = turnAbortCtrl;
 
     try {
-      // Direct backend URL to bypass Next.js dev proxy buffering.
+      // The platform's own origin, rather than a relative path: on a local run that keeps a
+      // streamed turn out of the dev server's rewrite and its request buffering. On a built
+      // deployment the setting names this page's own origin, so the request is proxied like every
+      // other one and this is not a bypass — which matters here, since a proxied body is bounded.
       const res = await apiFetch(`${BACKEND_URL}/api/voice/stream`, {
         method: "POST",
         body: formData,

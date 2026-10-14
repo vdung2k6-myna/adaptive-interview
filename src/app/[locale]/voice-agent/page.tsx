@@ -23,6 +23,15 @@ import {
 } from "@/lib/persona-catalog";
 import { PERSONAS, getPersonaById, type Persona } from "./personas";
 
+/**
+ * Where the platform is, as this page addresses it.
+ *
+ * Unset on a local run, so the fallback is :4000 directly — which is what keeps a streamed turn off
+ * the dev server's rewrite. On a built deployment the setting names this page's own origin, and
+ * every call below is then proxied by the platform exactly as a relative path would be. That is
+ * not a bypass in a build and cannot be made one from here; what it costs is that a turn's
+ * recording is a proxied body, and the proxy bounds one.
+ */
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 
 /**

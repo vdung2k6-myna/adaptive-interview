@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useTranslations } from "next-intl";
+import { encodeWav } from "@/lib/audio/capture-format";
 
 interface AudioRecorderProps {
   onRecordingComplete: (blob: Blob, durationMs: number) => void;
@@ -11,82 +12,59 @@ interface AudioRecorderProps {
 
 type RecorderState = "idle" | "recording" | "stopped";
 
+/**
+ * What the browser records into on its way to being re-encoded.
+ *
+ * This does not decide what is uploaded: every recording is decoded, narrowed to one channel at
+ * 16 kHz and re-encoded as WAV before it is sent, so the choice here only affects the intermediate
+ * blob and never reaches the wire. See `toNarrowBandWav`.
+ */
 const MIME_TYPE = typeof window !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")
   ? "audio/webm"
   : "audio/wav";
 
+/** The shape a capture is sent in — the band speech is recognised from, and small enough to fit
+ *  the transport. See `toNarrowBandWav`. */
+const CAPTURE_SAMPLE_RATE = 16_000;
+const CAPTURE_CHANNELS = 1;
+
 /**
- * Convert an audio Blob to WAV format using the Web Audio API.
- * audio.cpp only accepts WAV for STT transcription.
+ * Decode a recorded Blob and re-encode it as a narrow-band WAV.
+ *
+ * Two things happen here for two different reasons. The **WAV** is the platform's contract:
+ * `transcribeAudio` declares every upload `audio/wav` before it reaches the transcriber, so an
+ * uncompressed file is not a fallback but the format that is actually transcribed — and the
+ * container the browser recorded in never reaches the wire.
+ *
+ * The **narrow band** is the transport's. A capture is measured as a request body by the proxy in
+ * front of the API, and stereo at the device's rate reaches its 10 MB bound after about a minute
+ * of speech. One channel at 16 kHz is the band speech is recognised from and about six times
+ * smaller, which puts that bound around 5.5 minutes instead.
+ *
+ * The resampling is `OfflineAudioContext`'s — the platform's own filtered resampler. Keeping every
+ * third sample of a 48 kHz capture instead would fold everything above 8 kHz back down into the
+ * speech band as aliasing, and the file a session keeps is this one: there is no wide-band
+ * original left to go back to.
  */
-async function convertToWav(blob: Blob): Promise<Blob> {
+async function toNarrowBandWav(blob: Blob): Promise<Blob> {
   const arrayBuffer = await blob.arrayBuffer();
-  const audioContext = new AudioContext();
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-  audioContext.close();
+  const decodingContext = new AudioContext();
+  const decoded = await decodingContext.decodeAudioData(arrayBuffer);
+  decodingContext.close();
 
-  const numberOfChannels = audioBuffer.numberOfChannels;
-  const sampleRate = audioBuffer.sampleRate;
-  const format = 1; // PCM
-  const bitDepth = 16;
-  const bytesPerSample = bitDepth / 8;
-  const blockAlign = numberOfChannels * bytesPerSample;
+  // At least one frame, so an empty capture is still a buffer that can be rendered.
+  const frames = Math.max(1, Math.ceil(decoded.duration * CAPTURE_SAMPLE_RATE));
+  const narrowBand = new OfflineAudioContext(CAPTURE_CHANNELS, frames, CAPTURE_SAMPLE_RATE);
 
-  const length = audioBuffer.length * numberOfChannels * bytesPerSample + 44;
-  const buffer = new ArrayBuffer(length);
-  const view = new DataView(buffer);
+  const source = narrowBand.createBufferSource();
+  source.buffer = decoded;
+  // The destination has one channel, so the source's are mixed down to it by the graph rather
+  // than by hand — the platform's own downmix, which halves each side instead of summing them
+  // and clipping.
+  source.connect(narrowBand.destination);
+  source.start();
 
-  /* RIFF identifier */
-  writeString(view, 0, "RIFF");
-  /* RIFF chunk length */
-  view.setUint32(4, 36 + audioBuffer.length * numberOfChannels * bytesPerSample, true);
-  /* RIFF type */
-  writeString(view, 8, "WAVE");
-  /* format chunk identifier */
-  writeString(view, 12, "fmt ");
-  /* format chunk length */
-  view.setUint32(16, 16, true);
-  /* sample format (raw) */
-  view.setUint16(20, format, true);
-  /* channel count */
-  view.setUint16(22, numberOfChannels, true);
-  /* sample rate */
-  view.setUint32(24, sampleRate, true);
-  /* byte rate */
-  view.setUint32(28, sampleRate * blockAlign, true);
-  /* block align */
-  view.setUint16(32, blockAlign, true);
-  /* bits per sample */
-  view.setUint16(34, bitDepth, true);
-  /* data chunk identifier */
-  writeString(view, 36, "data");
-  /* data chunk length */
-  view.setUint32(40, audioBuffer.length * numberOfChannels * bytesPerSample, true);
-
-  // Write interleaved PCM data
-  const dataOffset = 44;
-  const channels: Float32Array[] = [];
-  for (let i = 0; i < numberOfChannels; i++) {
-    channels.push(audioBuffer.getChannelData(i));
-  }
-
-  let offset = dataOffset;
-  for (let i = 0; i < audioBuffer.length; i++) {
-    for (let ch = 0; ch < numberOfChannels; ch++) {
-      const sample = Math.max(-1, Math.min(1, channels[ch][i]));
-      const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-      view.setInt16(offset, intSample, true);
-      offset += 2;
-    }
-  }
-
-  return new Blob([buffer], { type: "audio/wav" });
-}
-
-function writeString(view: DataView, offset: number, string: string) {
-  for (let i = 0; i < string.length; i++) {
-    view.setUint8(offset + i, string.charCodeAt(i));
-  }
+  return encodeWav(await narrowBand.startRendering());
 }
 
 export default function AudioRecorder({ onRecordingComplete, onUserGesture, disabled }: AudioRecorderProps) {
@@ -157,13 +135,15 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
         const duration = Date.now() - startTimeRef.current;
         setDurationMs(duration);
 
-        // Convert webm → wav for reliable STT compatibility
+        // Narrow the capture to what the platform transcribes and what the transport will carry,
+        // before it is stored for submission. The duration above is the one measured while
+        // recording: the resampled buffer is shorter in frames, and it is not what was spoken.
         setConverting(true);
         try {
-          const wavBlob = await convertToWav(blob);
+          const wavBlob = await toNarrowBandWav(blob);
           recordedBlobRef.current = wavBlob;
         } catch (err) {
-          console.error("WAV conversion failed:", err);
+          console.error("Narrow-band conversion failed:", err);
           // Fallback: store original blob
           recordedBlobRef.current = blob;
         } finally {
