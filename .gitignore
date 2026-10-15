@@ -52,13 +52,8 @@ venv/
 *.egg-info/
 dist/
 build/
+# Agent tooling, regenerated locally by `openspec update` — not carried in the repo.
+# `.github/workflows/` is deliberately NOT ignored: CI lives there.
 .claude*
-.claude/commands/opsx/apply.md
-.claude/commands/opsx/archive.md
-.claude/commands/opsx/explore.md
-.claude/commands/opsx/propose.md
-.claude/plans/implement-voice-routes.md
-.claude/skills/openspec-apply-change/SKILL.md
-.claude/skills/openspec-archive-change/SKILL.md
-.claude/skills/openspec-explore/SKILL.md
-.claude/skills/openspec-propose/SKILL.md
+.github/prompts/
+.github/skills/
