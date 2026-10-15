@@ -1,6 +1,6 @@
 # Security Guide
 
-> **Backend security details** — For server-side threat model, MCP server security, database security, voice audio storage, and Ollama security, see [`adaptive-interview-api/docs/SECURITY.md`](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SECURITY.md).
+> **Backend security details** — For the API's security posture — what is reachable and behind which credential, database access, MCP authentication, and how recordings are stored and served — see [`adaptive-interview-api/docs/SECURITY.md`](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SECURITY.md).
 
 This document covers **frontend-specific** security concerns for the Next.js client.
 

@@ -26,7 +26,7 @@ Backend concerns have been moved to the API repository:
 | [Ollama Integration](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/OLLAMA.md) | AI model integration, prompts, streaming |
 | [Evaluation](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/EVALUATION.md) | Post-interview AI scoring system |
 | [Performance](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/PERFORMANCE.md) | Backend performance tuning and frontend rendering notes |
-| [Backend Security](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SECURITY.md) | Server-side threat model, MCP security, audio storage |
+| [Backend Security](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SECURITY.md) | API security posture: credentials, database access, MCP auth, recording storage |
 
 ## Project Overview
 
