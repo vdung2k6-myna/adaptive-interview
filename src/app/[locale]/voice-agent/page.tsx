@@ -249,6 +249,9 @@ export default function VoiceAgentPage() {
   const [music, setMusic] = useState<{ tracks: LibraryTrack[]; report: string | null } | null>(null);
   const [musicPage, setMusicPage] = useState(1);
   const [playingTrack, setPlayingTrack] = useState<LibraryTrack | null>(null);
+  // The queue index the track was enqueued at, so the stop control can cancel
+  // that one item without silencing a reply still being spoken.
+  const [playingTrackIndex, setPlayingTrackIndex] = useState<number | null>(null);
 
   // Audio refs
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -341,6 +344,7 @@ export default function VoiceAgentPage() {
         console.log(`[VoiceAgent] Audio queue finished`);
         setQueueIsPlaying(false);
         setPlayingTrack(null);
+        setPlayingTrackIndex(null);
       },
       onError: (index, err) => {
         console.warn(`[VoiceAgent] Audio error index=${index}:`, err);
@@ -349,6 +353,7 @@ export default function VoiceAgentPage() {
           // A track the person started, which the library no longer serves: named as gone rather than
           // left as a strip claiming to play something that is not playing (design D2).
           setPlayingTrack(null);
+          setPlayingTrackIndex(null);
           setNotice(t("musicGone"));
         }
       },
@@ -391,8 +396,10 @@ export default function VoiceAgentPage() {
     const queue = sentenceQueueRef.current ?? makeQueue();
     if (!queue) return;
 
-    queue.enqueue(MUSIC_INDEX_BASE + at, trackUrl(track.url), track.title);
+    const index = MUSIC_INDEX_BASE + at;
+    queue.enqueue(index, trackUrl(track.url), track.title);
     setPlayingTrack(track);
+    setPlayingTrackIndex(index);
   }
 
   /**
@@ -404,9 +411,20 @@ export default function VoiceAgentPage() {
    * for silence (design D4, D5).
    */
   function stopPlaying() {
-    sentenceQueueRef.current?.stop();
-    setQueueIsPlaying(false);
+    // Cancel the track, not the speaker. A reply already being spoken continues:
+    // the person pressed stop on the track they started, not on the answer. The
+    // fallback is the old turn-shaped stop for the impossible case where the
+    // index was lost.
+    if (playingTrackIndex !== null) {
+      sentenceQueueRef.current?.cancel(playingTrackIndex);
+    } else {
+      sentenceQueueRef.current?.stop();
+    }
     setPlayingTrack(null);
+    setPlayingTrackIndex(null);
+    // The queue is the authority: it is still playing if the reply continued,
+    // and the callbacks above keep this in step when it finishes.
+    setQueueIsPlaying(sentenceQueueRef.current?.getIsPlaying() ?? false);
   }
 
   /**
@@ -753,6 +771,7 @@ export default function VoiceAgentPage() {
     // A turn takes the speaker: a track the person started out of the library stops here, and the strip
     // that names it comes down, because what is playing from now on is the reply.
     setPlayingTrack(null);
+    setPlayingTrackIndex(null);
     makeQueue();
 
     // Reset per-turn streaming state

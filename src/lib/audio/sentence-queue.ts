@@ -142,6 +142,51 @@ export class SentenceAudioQueue {
     this.currentIndex = -1;
   }
 
+  /**
+   * Cancel one item without stopping the rest of the queue.
+   *
+   * A person who started a track can stop it while a reply is still being
+   * spoken. The track is queued behind the reply, so it is not the current
+   * item: removing it leaves the reply playing. If the track has started, it is
+   * the current item, and stopping it advances to whatever follows — or
+   * finishes the queue when nothing does.
+   *
+   * This is deliberately not `stop()`. A turn-shaped stop silences the speaker;
+   * a person stopping the track they started asked for the track to stop, not
+   * for the answer to. In-flight work for the cancelled item is invalidated, so
+   * a `playNext` already awaiting its fetch cannot start it afterwards.
+   */
+  cancel(index: number) {
+    const queued = this.items.findIndex((item) => item.index === index);
+    if (queued !== -1) {
+      this.items.splice(queued, 1);
+      this.preloaded.delete(index);
+      return;
+    }
+
+    if (this.currentIndex !== index) return;
+
+    // The item is playing, or inside a playNext that is still awaiting its fetch.
+    // Invalidating the generation is what stops that playNext from starting it
+    // after the await; the new playNext below starts the next item.
+    this.liveGeneration++;
+    if (this.pendingTimer) {
+      clearTimeout(this.pendingTimer);
+      this.pendingTimer = null;
+    }
+    if (this.currentSource) {
+      try {
+        this.currentSource.onended = null;
+        this.currentSource.stop();
+      } catch {
+        // already stopped
+      }
+      this.currentSource = null;
+    }
+    this.preloaded.delete(index);
+    this.playNext();
+  }
+
   /** Preload a single item in the background (non-blocking). */
   private async preloadItem(index: number, url: string) {
     const myGen = this.liveGeneration;
@@ -156,6 +201,12 @@ export class SentenceAudioQueue {
 
       const audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
       if (myGen !== this.liveGeneration) return;
+
+      // The item may have been cancelled while this preload was in flight.
+      // Nothing would play it, and keeping the buffer would only hold it.
+      if (!this.items.some((item) => item.index === index) && this.currentIndex !== index) {
+        return;
+      }
 
       if (audioBuffer.duration > 0 && Number.isFinite(audioBuffer.duration)) {
         this.preloaded.set(index, audioBuffer);

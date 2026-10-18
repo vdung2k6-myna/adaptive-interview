@@ -129,3 +129,66 @@ describe("a segment that cannot be played", () => {
     assert.equal(r.finished(), 1, "a turn with nothing playable still ends rather than hanging");
   });
 });
+
+describe("cancelling one item", () => {
+  it("removes a queued track without silencing the reply", async () => {
+    // The person started a track while the reply was still being spoken: the
+    // track is queued behind the reply, and stopping it must leave the reply
+    // playing. This is the behaviour task 3.3 asks for and design D4 owes.
+    const started: number[] = [];
+    let finished = 0;
+    let resolveDone: () => void = () => {};
+    const done = new Promise<void>((resolve) => {
+      resolveDone = resolve;
+    });
+    const queue = new SentenceAudioQueue(fakeAudioContext(), {
+      fetch: fakeFetch(),
+      onStart: (index) => started.push(index),
+      onFinished: () => {
+        finished += 1;
+        resolveDone();
+      },
+    });
+
+    queue.enqueue(0, "/audio/reply.wav");
+    queue.enqueue(1_000_000, "/audio/music/a-flac.flac");
+    queue.cancel(1_000_000);
+
+    assert.equal(queue.getCurrentIndex(), 0, "the reply is still the item being played");
+    assert.equal(queue.getIsPlaying(), true, "the reply was not stopped");
+    assert.equal(queue.getQueueLength(), 0, "the track is gone from the queue");
+
+    await done;
+
+    assert.deepEqual(started, [0], "only the reply started");
+    assert.equal(finished, 1, "the reply still reaches its end");
+  });
+
+  it("stops a track that has already started and finishes the queue", async () => {
+    // The track is the current item, not a queued one. Cancelling it must stop
+    // it and let the queue finish, rather than leaving a playNext awaiting its
+    // fetch to start the cancelled item afterwards.
+    let finished = 0;
+    let resolveDone: () => void = () => {};
+    const done = new Promise<void>((resolve) => {
+      resolveDone = resolve;
+    });
+    const queue = new SentenceAudioQueue(fakeAudioContext(), {
+      fetch: fakeFetch(),
+      onFinished: () => {
+        finished += 1;
+        resolveDone();
+      },
+    });
+
+    queue.enqueue(1_000_000, "/audio/music/a-flac.flac");
+    queue.cancel(1_000_000);
+
+    assert.equal(queue.getIsPlaying(), false, "nothing is playing");
+    assert.equal(queue.getCurrentIndex(), -1, "the item that was current is gone");
+
+    await done;
+
+    assert.equal(finished, 1, "the queue finishes rather than hanging");
+  });
+});
