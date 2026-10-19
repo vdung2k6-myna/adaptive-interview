@@ -338,6 +338,7 @@
     "soundOff": "🔇 Muted",
     "music": "Music",
     "musicReading": "Reading what this deployment holds…",
+    "musicQueued": "Up next: {title}",
     "musicNowPlaying": "Playing {title}",
     "musicGone": "That track is no longer in the library.",
     "musicPrev": "← Previous",

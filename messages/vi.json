@@ -338,6 +338,7 @@
     "soundOff": "🔇 Đã tắt tiếng",
     "music": "Nhạc",
     "musicReading": "Đang đọc danh sách bài của hệ thống…",
+    "musicQueued": "Tiếp theo: {title}",
     "musicNowPlaying": "Đang phát {title}",
     "musicGone": "Bài đó không còn trong thư viện nữa.",
     "musicPrev": "← Trước",
