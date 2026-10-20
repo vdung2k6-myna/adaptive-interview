@@ -182,6 +182,7 @@
     "completionMessage": "Thank you for completing the interview.",
     "tapToRecord": "Tap to start recording",
     "speakClearly": "Speak clearly and concisely",
+    "endsOnSilence": "Ends when you stop speaking",
     "convertingWav": "Converting to WAV...",
     "recordingComplete": "Recording complete ({time})",
     "submitAnswer": "Submit Answer",

@@ -152,6 +152,17 @@ NEXT_PUBLIC_API_TOKEN=your-secret-token-here
 # How long the voice-agent page waits for the persona catalog (GET /api/personas)
 # before falling back to its built-in persona list. Optional: 3000ms when unset.
 NEXT_PUBLIC_PERSONA_CATALOG_TIMEOUT_MS=3000
+
+# Recording limits (optional; defaults shown). A recording ends on its own after the
+# silence following speech, is discarded when no speech is heard, and stops at the
+# maximum. Values are inlined when the client is built; invalid values take the default.
+NEXT_PUBLIC_RECORDING_MIN_SPEECH_MS=300
+NEXT_PUBLIC_VOICE_AGENT_SILENCE_MS=1000
+NEXT_PUBLIC_VOICE_AGENT_NO_SPEECH_MS=15000
+NEXT_PUBLIC_VOICE_AGENT_MAX_RECORDING_MS=120000
+NEXT_PUBLIC_INTERVIEW_SILENCE_MS=3000
+NEXT_PUBLIC_INTERVIEW_NO_SPEECH_MS=15000
+NEXT_PUBLIC_INTERVIEW_MAX_RECORDING_MS=600000
 ```
 
 Database, Ollama, audio service, and MCP variables live in the backend's `.env`. See [backend setup](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SETUP.md).
@@ -202,6 +213,8 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000)
 
 Both the backend (port 4000) and frontend (port 3000) must be running.
+
+Recording limits are optional. Their defaults and variables are listed under [Environment Variables](#environment-variables).
 
 ---
 

@@ -182,6 +182,7 @@
     "completionMessage": "Cảm ơn bạn đã hoàn thành buổi phỏng vấn.",
     "tapToRecord": "Nhấn để bắt đầu ghi âm",
     "speakClearly": "Nói rõ ràng và súc tích",
+    "endsOnSilence": "Tự kết thúc khi bạn ngừng nói",
     "convertingWav": "Đang chuyển đổi sang WAV...",
     "recordingComplete": "Đã ghi âm xong ({time})",
     "submitAnswer": "Gửi câu trả lời",

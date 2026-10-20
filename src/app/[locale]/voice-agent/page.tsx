@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import AudioRecorder from "@/components/AudioRecorder";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { SentenceAudioQueue } from "@/lib/audio/sentence-queue";
+import { RECORDING_LIMITS } from "@/lib/audio/recording-limits";
 import { createWindowUploader } from "@/lib/audio/window-upload";
 import { WINDOWED_INGEST } from "@/lib/audio/windowed-ingest";
 import { apiFetch } from "@/lib/api-client";
@@ -1888,6 +1889,10 @@ export default function VoiceAgentPage() {
           {inputMode === "voice" ? (
             <AudioRecorder
               onRecordingComplete={handleRecordingComplete}
+              // A conversation: a pause ends the turn, and the turn is sent without
+              // asking for a second click.
+              limits={RECORDING_LIMITS.voiceAgent}
+              autoSubmit
               // Off, the recorder hands over the whole recording and the turn
               // sends it, exactly as before windows existed.
               windowUploader={

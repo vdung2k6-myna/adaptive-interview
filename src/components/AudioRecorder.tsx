@@ -7,6 +7,14 @@ import {
   CAPTURE_CHANNELS,
   CAPTURE_SAMPLE_RATE,
 } from "@/lib/audio/capture-assembly";
+import {
+  createRecordingEndpointer,
+  type RecordingEndpointer,
+} from "@/lib/audio/recording-endpointer";
+import {
+  ENDPOINTER_TUNING,
+  type RecordingLimits,
+} from "@/lib/audio/recording-limits";
 
 interface AudioRecorderProps {
   /**
@@ -26,6 +34,19 @@ interface AudioRecorderProps {
    * before windows existed.
    */
   windowUploader?: (turnId: string) => (window: Blob) => Promise<void>;
+  /**
+   * How this surface ends a recording on its own: the silence that follows speech, the
+   * bound on a recording that hears no speech, and the abandonment bound.
+   *
+   * Passed in rather than fixed here, because the interview and the voice agent are
+   * different kinds of conversation (`recording-limits.ts`).
+   */
+  limits: RecordingLimits;
+  /**
+   * Whether a finished recording goes straight to the page, with no submit/discard
+   * step. The voice agent sends; the interview keeps its confirmation.
+   */
+  autoSubmit?: boolean;
   onUserGesture?: () => void;
   disabled?: boolean;
 }
@@ -114,6 +135,8 @@ async function renderWindow(blocks: Float32Array[][], sourceRate: number): Promi
 export default function AudioRecorder({
   onRecordingComplete,
   windowUploader,
+  limits,
+  autoSubmit,
   onUserGesture,
   disabled,
 }: AudioRecorderProps) {
@@ -152,6 +175,12 @@ export default function AudioRecorder({
   /** Which half failed, so the alert says which rather than "the recording". */
   const failureKindRef = useRef<"convert" | "upload" | null>(null);
   const recordingRef = useRef(false);
+  /** The recording's ending decision, fed from the worklet's own blocks. */
+  const endpointerRef = useRef<RecordingEndpointer | null>(null);
+  /** Energy accumulated toward the next ~20 ms frame the endpointer judges. */
+  const vadAccumRef = useRef({ sumSquares: 0, samples: 0 });
+  /** Whether this recording has already been handed to the page. */
+  const submittedRef = useRef(false);
   /** The turn this recording is being sent under, when windowed ingestion is on. */
   const turnIdRef = useRef<string | undefined>(undefined);
   /** How a converted window reaches the platform; undefined on the whole-body path. */
@@ -246,6 +275,9 @@ export default function AudioRecorder({
     conversionFailedRef.current = false;
     failureKindRef.current = null;
     recordedBlobRef.current = null;
+    endpointerRef.current = null;
+    vadAccumRef.current = { sumSquares: 0, samples: 0 };
+    submittedRef.current = false;
 
     // One id per recording, invented here because this is the moment the first
     // window can be sent; the turn that ends the recording names it.
@@ -271,10 +303,28 @@ export default function AudioRecorder({
       streamRef.current = stream;
       const source = audioContext.createMediaStreamSource(stream);
 
+      // The microphone going away is not the person finishing, but it does end the
+      // recording: complete what was captured if anything was heard, otherwise give up
+      // on a recording that never became an utterance.
+      for (const track of stream.getTracks()) {
+        track.addEventListener("ended", () => {
+          if (!recordingRef.current) return;
+          if (endpointerRef.current?.hasHeardSpeech()) stopRecording();
+          else discardRecording();
+        });
+      }
+
       const worklet = new AudioWorkletNode(audioContext, "capture-processor");
       workletRef.current = worklet;
 
       const sourceRate = audioContext.sampleRate;
+      const endpointer = createRecordingEndpointer({ sampleRate: sourceRate, limits });
+      endpointerRef.current = endpointer;
+      const vadFrameSamples = Math.max(
+        1,
+        Math.round((sourceRate * ENDPOINTER_TUNING.frameMs) / 1_000)
+      );
+
       worklet.port.onmessage = (event: MessageEvent<Float32Array[]>) => {
         if (!recordingRef.current) return;
 
@@ -285,6 +335,36 @@ export default function AudioRecorder({
 
         if (pendingFramesRef.current >= sourceRate * WINDOW_SECONDS) {
           flushWindow();
+        }
+
+        // Whether the person is still speaking is judged from the same samples the
+        // windows are built from, in ~20 ms frames. Time comes from the sample count,
+        // never from the display clock: a background tab throttles `setInterval`, and a
+        // throttled timer must not be able to hold the microphone open.
+        let sumSquares = 0;
+        let sampleCount = 0;
+        for (const channel of channels) {
+          for (let index = 0; index < channel.length; index++) {
+            const sample = channel[index]!;
+            sumSquares += sample * sample;
+          }
+          sampleCount += channel.length;
+        }
+        const vad = vadAccumRef.current;
+        vad.sumSquares += sumSquares;
+        vad.samples += sampleCount;
+        if (vad.samples >= vadFrameSamples) {
+          const rms = Math.sqrt(vad.sumSquares / vad.samples);
+          const judgedSamples = vad.samples;
+          vad.sumSquares = 0;
+          vad.samples = 0;
+
+          const verdict = endpointer.push(rms, judgedSamples);
+          if (verdict === "end" || verdict === "cap") {
+            stopRecording();
+          } else if (verdict === "giveup") {
+            discardRecording();
+          }
         }
       };
 
@@ -331,6 +411,9 @@ export default function AudioRecorder({
   };
 
   const stopRecording = () => {
+    // An automatic end and the button can land together; the first one wins, so the
+    // recording is not completed twice.
+    if (!recordingRef.current) return;
     onUserGesture?.();
     recordingRef.current = false;
 
@@ -345,7 +428,8 @@ export default function AudioRecorder({
       rafRef.current = null;
     }
 
-    setDurationMs(Date.now() - startTimeRef.current);
+    const spokenMs = Date.now() - startTimeRef.current;
+    setDurationMs(spokenMs);
     setState("stopped");
     setConverting(true);
 
@@ -373,6 +457,22 @@ export default function AudioRecorder({
       framesRef.current = [];
       setConverting(false);
       cleanup();
+
+      if (!autoSubmit) return;
+
+      // The voice agent sends here, with no panel in between. The conversion chain
+      // above has already awaited the last window, so what is handed over is the whole
+      // recording. `submittedRef` keeps a manual stop that raced the endpointer from
+      // sending the same recording twice.
+      const blob = recordedBlobRef.current;
+      recordedBlobRef.current = null;
+      setDurationMs(0);
+      setWaveform(new Array(40).fill(0));
+      setState("idle");
+      if (blob && !submittedRef.current) {
+        submittedRef.current = true;
+        onRecordingComplete(blob, spokenMs, turnIdRef.current);
+      }
     });
   };
 
@@ -380,6 +480,9 @@ export default function AudioRecorder({
     cleanup();
     framesRef.current = [];
     recordedBlobRef.current = null;
+    endpointerRef.current = null;
+    vadAccumRef.current = { sumSquares: 0, samples: 0 };
+    submittedRef.current = false;
     turnIdRef.current = undefined;
     uploadWindowRef.current = undefined;
     setState("idle");
@@ -429,8 +532,11 @@ export default function AudioRecorder({
             ))}
           </div>
 
-          <p className="mb-4 text-center text-2xl font-mono text-zinc-900 dark:text-zinc-50">
+          <p className="mb-2 text-center text-2xl font-mono text-zinc-900 dark:text-zinc-50">
             {formatTime(durationMs)}
+          </p>
+          <p className="mb-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
+            {t("endsOnSilence")}
           </p>
 
           <div className="flex justify-center gap-3">
