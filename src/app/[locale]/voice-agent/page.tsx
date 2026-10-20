@@ -7,6 +7,8 @@ import { useSearchParams } from "next/navigation";
 import AudioRecorder from "@/components/AudioRecorder";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { SentenceAudioQueue } from "@/lib/audio/sentence-queue";
+import { createWindowUploader } from "@/lib/audio/window-upload";
+import { WINDOWED_INGEST } from "@/lib/audio/windowed-ingest";
 import { apiFetch } from "@/lib/api-client";
 import { fetchLibrary, type LibraryTrack } from "@/lib/music-library";
 import {
@@ -817,7 +819,10 @@ export default function VoiceAgentPage() {
   async function sendTurn(
     activeConfig: AgentConfig,
     currentMessages: AgentMessage[],
-    input: { type: "audio"; blob: Blob; durationMs: number } | { type: "text"; text: string } | null
+    input:
+      | { type: "audio"; blob: Blob; durationMs: number; turnId?: string }
+      | { type: "text"; text: string }
+      | null
   ) {
     const myGen = ++turnGenerationRef.current;
     turnStreamingRef.current = true;
@@ -866,7 +871,10 @@ export default function VoiceAgentPage() {
     );
 
     if (input?.type === "audio") {
-      formData.append("audio", input.blob, "recording.wav");
+      // A windowed turn names what the server already holds and sends no audio:
+      // the windows were sent while the answer was being spoken.
+      if (input.turnId) formData.append("turnId", input.turnId);
+      else formData.append("audio", input.blob, "recording.wav");
     } else if (input?.type === "text") {
       formData.append("text", input.text);
       // A prefetch held for exactly this text is this turn's knowledge, already
@@ -1130,9 +1138,9 @@ export default function VoiceAgentPage() {
     }
   }
 
-  async function handleRecordingComplete(blob: Blob, durationMs: number) {
+  async function handleRecordingComplete(blob: Blob, durationMs: number, turnId?: string) {
     if (!config) return;
-    await sendTurn(config, messages, { type: "audio", blob, durationMs });
+    await sendTurn(config, messages, { type: "audio", blob, durationMs, turnId });
   }
 
   async function handleTextSubmit(e: React.FormEvent) {
@@ -1880,6 +1888,20 @@ export default function VoiceAgentPage() {
           {inputMode === "voice" ? (
             <AudioRecorder
               onRecordingComplete={handleRecordingComplete}
+              // Off, the recorder hands over the whole recording and the turn
+              // sends it, exactly as before windows existed.
+              windowUploader={
+                WINDOWED_INGEST
+                  ? (turnId) =>
+                      // Same-origin, through the app's rewrite: the browser talks
+                      // only to whatever served this page, as every other call here does.
+                      createWindowUploader({
+                        fetch: apiFetch,
+                        turnId,
+                        language: config?.language,
+                      })
+                  : undefined
+              }
               onUserGesture={() => {
                 void initAudioContext();
               }}

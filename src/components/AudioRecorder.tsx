@@ -2,72 +2,121 @@
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useTranslations } from "next-intl";
-import { encodeWav } from "@/lib/audio/capture-format";
+import {
+  assembleCapture,
+  CAPTURE_CHANNELS,
+  CAPTURE_SAMPLE_RATE,
+} from "@/lib/audio/capture-assembly";
 
 interface AudioRecorderProps {
-  onRecordingComplete: (blob: Blob, durationMs: number) => void;
+  /**
+   * The finished recording, and the id it was sent under when windowed ingestion is on.
+   *
+   * The id is absent on the whole-body path, and the caller then sends the blob as it always has.
+   */
+  onRecordingComplete: (blob: Blob, durationMs: number, turnId?: string) => void;
+  /**
+   * Turns windowed ingestion on.
+   *
+   * Given the turn's id, answers with the function that sends one window. The recorder calls that
+   * function as each window is converted, in order, and awaits it — so the windows on the wire are
+   * the frames the finished recording is assembled from, and at most one is in flight.
+   *
+   * Absent, the recording is held and handed over whole, which is the behaviour the client had
+   * before windows existed.
+   */
+  windowUploader?: (turnId: string) => (window: Blob) => Promise<void>;
   onUserGesture?: () => void;
   disabled?: boolean;
 }
 
 type RecorderState = "idle" | "recording" | "stopped";
 
-/**
- * What the browser records into on its way to being re-encoded.
- *
- * This does not decide what is uploaded: every recording is decoded, narrowed to one channel at
- * 16 kHz and re-encoded as WAV before it is sent, so the choice here only affects the intermediate
- * blob and never reaches the wire. See `toNarrowBandWav`.
- */
-const MIME_TYPE = typeof window !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")
-  ? "audio/webm"
-  : "audio/wav";
-
-/** The shape a capture is sent in — the band speech is recognised from, and small enough to fit
- *  the transport. See `toNarrowBandWav`. */
-const CAPTURE_SAMPLE_RATE = 16_000;
-const CAPTURE_CHANNELS = 1;
+/** Where the audio-thread processor is served from. */
+const WORKLET_URL = "/worklets/capture-processor.js";
 
 /**
- * Decode a recorded Blob and re-encode it as a narrow-band WAV.
+ * How much audio is converted at once.
  *
- * Two things happen here for two different reasons. The **WAV** is the platform's contract:
- * `transcribeAudio` declares every upload `audio/wav` before it reaches the transcriber, so an
- * uncompressed file is not a fallback but the format that is actually transcribed — and the
- * container the browser recorded in never reaches the wire.
- *
- * The **narrow band** is the transport's. A capture is measured as a request body by the proxy in
- * front of the API, and stereo at the device's rate reaches its 10 MB bound after about a minute
- * of speech. One channel at 16 kHz is the band speech is recognised from and about six times
- * smaller, which puts that bound around 5.5 minutes instead.
- *
- * The resampling is `OfflineAudioContext`'s — the platform's own filtered resampler. Keeping every
- * third sample of a 48 kHz capture instead would fold everything above 8 kHz back down into the
- * speech band as aliasing, and the file a session keeps is this one: there is no wide-band
- * original left to go back to.
+ * The unit of memory: at 48 kHz stereo float32, five seconds is about 1.9 MiB
+ * regardless of how long the answer runs. Shorter windows would put an
+ * anti-aliasing filter transient at every join; longer ones hold more audio than a
+ * sentence needs.
  */
-async function toNarrowBandWav(blob: Blob): Promise<Blob> {
-  const arrayBuffer = await blob.arrayBuffer();
-  const decodingContext = new AudioContext();
-  const decoded = await decodingContext.decodeAudioData(arrayBuffer);
-  decodingContext.close();
+const WINDOW_SECONDS = 5;
 
-  // At least one frame, so an empty capture is still a buffer that can be rendered.
-  const frames = Math.max(1, Math.ceil(decoded.duration * CAPTURE_SAMPLE_RATE));
-  const narrowBand = new OfflineAudioContext(CAPTURE_CHANNELS, frames, CAPTURE_SAMPLE_RATE);
+/**
+ * Encode float samples as 16-bit little-endian PCM.
+ *
+ * The two halves are scaled differently — a negative sample by 0x8000 and a
+ * positive one by 0x7fff — so that -1 and 1 are both representable in two's
+ * complement.
+ */
+function toPcm16(samples: Float32Array): Uint8Array {
+  const bytes = new Uint8Array(samples.length * 2);
+  const view = new DataView(bytes.buffer);
 
-  const source = narrowBand.createBufferSource();
-  source.buffer = decoded;
-  // The destination has one channel, so the source's are mixed down to it by the graph rather
-  // than by hand — the platform's own downmix, which halves each side instead of summing them
-  // and clipping.
-  source.connect(narrowBand.destination);
-  source.start();
+  for (let index = 0; index < samples.length; index++) {
+    const sample = Math.max(-1, Math.min(1, samples[index]));
+    view.setInt16(index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
 
-  return encodeWav(await narrowBand.startRendering());
+  return bytes;
 }
 
-export default function AudioRecorder({ onRecordingComplete, onUserGesture, disabled }: AudioRecorderProps) {
+/**
+ * Convert one window of captured audio into the form the capture is sent in.
+ *
+ * The resampling is `OfflineAudioContext`'s — the platform's own filtered resampler.
+ * Keeping every third sample of a 48 kHz capture instead would fold everything above
+ * 8 kHz back down into the speech band as aliasing, and the file a session keeps is
+ * this one: there is no wide-band original left to go back to.
+ *
+ * The destination has one channel, so the source's channels are mixed down by the
+ * graph rather than by hand — the platform's own downmix, which halves each side
+ * instead of summing them and clipping.
+ */
+async function renderWindow(blocks: Float32Array[][], sourceRate: number): Promise<Uint8Array> {
+  const channelCount = Math.max(1, blocks[0]?.length ?? 1);
+  const frameCount = blocks.reduce((total, block) => total + (block[0]?.length ?? 0), 0);
+
+  if (frameCount === 0) return new Uint8Array(0);
+
+  const source = new AudioBuffer({
+    length: frameCount,
+    sampleRate: sourceRate,
+    numberOfChannels: channelCount,
+  });
+
+  for (let channel = 0; channel < channelCount; channel++) {
+    const samples = new Float32Array(frameCount);
+    let offset = 0;
+    for (const block of blocks) {
+      const data = block[channel];
+      if (!data) continue;
+      samples.set(data, offset);
+      offset += data.length;
+    }
+    source.copyToChannel(samples, channel);
+  }
+
+  // At least one frame, so an empty window is still a buffer that can be rendered.
+  const frames = Math.max(1, Math.ceil((frameCount / sourceRate) * CAPTURE_SAMPLE_RATE));
+  const context = new OfflineAudioContext(CAPTURE_CHANNELS, frames, CAPTURE_SAMPLE_RATE);
+  const node = context.createBufferSource();
+  node.buffer = source;
+  node.connect(context.destination);
+  node.start();
+
+  return toPcm16((await context.startRendering()).getChannelData(0));
+}
+
+export default function AudioRecorder({
+  onRecordingComplete,
+  windowUploader,
+  onUserGesture,
+  disabled,
+}: AudioRecorderProps) {
   const t = useTranslations("voice");
   const [state, setState] = useState<RecorderState>("idle");
   const [durationMs, setDurationMs] = useState(0);
@@ -75,18 +124,42 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
   const [converting, setConverting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
-  const recordedBlobRef = useRef<Blob | null>(null); // Stores converted WAV blob after stop
+  const recordedBlobRef = useRef<Blob | null>(null);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const workletRef = useRef<AudioWorkletNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
   const startTimeRef = useRef<number>(0);
   const rafRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  /**
+   * The recording, in the form it will be sent: every window already converted, and
+   * nothing else held. This is the only audio the client keeps.
+   */
+  const framesRef = useRef<Uint8Array[]>([]);
+  /** Blocks captured but not yet converted — at most one window's worth. */
+  const blocksRef = useRef<Float32Array[][]>([]);
+  const pendingFramesRef = useRef(0);
+  /**
+   * Windows are converted one at a time, in order. The chain is what keeps the
+   * memory bound true: a second conversion cannot start while the first is still
+   * holding its decoded buffer.
+   */
+  const convertChainRef = useRef<Promise<void>>(Promise.resolve());
+  const conversionFailedRef = useRef(false);
+  /** Which half failed, so the alert says which rather than "the recording". */
+  const failureKindRef = useRef<"convert" | "upload" | null>(null);
+  const recordingRef = useRef(false);
+  /** The turn this recording is being sent under, when windowed ingestion is on. */
+  const turnIdRef = useRef<string | undefined>(undefined);
+  /** How a converted window reaches the platform; undefined on the whole-body path. */
+  const uploadWindowRef = useRef<((window: Blob) => Promise<void>) | undefined>(undefined);
+
   const cleanup = useCallback(() => {
+    recordingRef.current = false;
+
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -95,21 +168,70 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (workletRef.current) {
+      workletRef.current.port.onmessage = null;
+      workletRef.current.disconnect();
+      workletRef.current = null;
+    }
     if (audioContextRef.current && audioContextRef.current.state !== "closed") {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
     }
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-    mediaRecorderRef.current = null;
     analyserRef.current = null;
+    blocksRef.current = [];
+    pendingFramesRef.current = 0;
   }, []);
 
   useEffect(() => {
     return () => cleanup();
   }, [cleanup]);
+
+  /**
+   * Convert whatever has been captured since the last window and queue it behind
+   * the windows already converting.
+   */
+  const flushWindow = useCallback(() => {
+    const blocks = blocksRef.current;
+    if (blocks.length === 0 || pendingFramesRef.current === 0) return;
+
+    blocksRef.current = [];
+    pendingFramesRef.current = 0;
+    const sourceRate = audioContextRef.current?.sampleRate ?? 48_000;
+
+    convertChainRef.current = convertChainRef.current.then(async () => {
+      let frame: Uint8Array;
+      try {
+        frame = await renderWindow(blocks, sourceRate);
+      } catch (err) {
+        // Converted by the browser, so this is Web Audio refusing the window
+        // rather than the platform refusing it — worth naming separately.
+        console.error("Window conversion failed:", err);
+        conversionFailedRef.current = true;
+        failureKindRef.current = "convert";
+        return;
+      }
+
+      framesRef.current.push(frame);
+
+      // Sent from the same frame the recording is assembled from, and awaited
+      // before the next window is converted: the windows on the wire are the
+      // recording, in order, with at most one upload in flight.
+      if (uploadWindowRef.current) {
+        try {
+          await uploadWindowRef.current(assembleCapture([frame]));
+        } catch (err) {
+          // The uploader has already retried once; this is the second refusal.
+          console.error("Window upload failed:", err);
+          conversionFailedRef.current = true;
+          failureKindRef.current = "upload";
+        }
+      }
+    });
+  }, []);
 
   const startRecording = async () => {
     if (disabled) return;
@@ -117,61 +239,78 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
     setIsSubmitting(false);
     isSubmittingRef.current = false;
 
+    framesRef.current = [];
+    blocksRef.current = [];
+    pendingFramesRef.current = 0;
+    convertChainRef.current = Promise.resolve();
+    conversionFailedRef.current = false;
+    failureKindRef.current = null;
+    recordedBlobRef.current = null;
+
+    // One id per recording, invented here because this is the moment the first
+    // window can be sent; the turn that ends the recording names it.
+    turnIdRef.current = windowUploader ? crypto.randomUUID() : undefined;
+    uploadWindowRef.current =
+      windowUploader && turnIdRef.current ? windowUploader(turnIdRef.current) : undefined;
+
     try {
-      chunksRef.current = [];
-      recordedBlobRef.current = null;
+      const audioContext = new AudioContext();
+      // The samples cannot be had without a worklet, and there is no fallback that
+      // keeps this recording's cost bounded — refusing is the honest answer rather
+      // than recording in a way this change exists to remove.
+      if (!audioContext.audioWorklet) {
+        await audioContext.close();
+        alert(t("recorderUnsupported"));
+        return;
+      }
+
+      await audioContext.audioWorklet.addModule(WORKLET_URL);
+      audioContextRef.current = audioContext;
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      const source = audioContext.createMediaStreamSource(stream);
 
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: MIME_TYPE });
-      mediaRecorderRef.current = mediaRecorder;
+      const worklet = new AudioWorkletNode(audioContext, "capture-processor");
+      workletRef.current = worklet;
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
+      const sourceRate = audioContext.sampleRate;
+      worklet.port.onmessage = (event: MessageEvent<Float32Array[]>) => {
+        if (!recordingRef.current) return;
 
-      mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: MIME_TYPE });
-        const duration = Date.now() - startTimeRef.current;
-        setDurationMs(duration);
+        const channels = event.data;
+        const frames = channels[0]?.length ?? 0;
+        blocksRef.current.push(channels);
+        pendingFramesRef.current += frames;
 
-        // Narrow the capture to what the platform transcribes and what the transport will carry,
-        // before it is stored for submission. The duration above is the one measured while
-        // recording: the resampled buffer is shorter in frames, and it is not what was spoken.
-        setConverting(true);
-        try {
-          const wavBlob = await toNarrowBandWav(blob);
-          recordedBlobRef.current = wavBlob;
-        } catch (err) {
-          console.error("Narrow-band conversion failed:", err);
-          // Fallback: store original blob
-          recordedBlobRef.current = blob;
-        } finally {
-          setConverting(false);
-          cleanup();
+        if (pendingFramesRef.current >= sourceRate * WINDOW_SECONDS) {
+          flushWindow();
         }
       };
 
-      // Set up audio visualization
-      const audioContext = new AudioContext();
-      audioContextRef.current = audioContext;
-      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(worklet);
+
+      // A node whose output goes nowhere is not guaranteed to be pulled by the
+      // graph, so it is connected to the destination through silence.
+      const silence = audioContext.createGain();
+      silence.gain.value = 0;
+      worklet.connect(silence);
+      silence.connect(audioContext.destination);
+
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 128;
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      mediaRecorder.start(100); // collect every 100ms
+      recordingRef.current = true;
       startTimeRef.current = Date.now();
       setState("recording");
       setDurationMs(0);
 
-      // Timer
       timerRef.current = setInterval(() => {
         setDurationMs(Date.now() - startTimeRef.current);
       }, 100);
 
-      // Waveform animation
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const draw = () => {
         if (!analyserRef.current) return;
@@ -186,21 +325,63 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
       draw();
     } catch (err) {
       console.error("Failed to start recording:", err);
+      cleanup();
       alert(t("microphoneError"));
     }
   };
 
   const stopRecording = () => {
     onUserGesture?.();
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop();
+    recordingRef.current = false;
+
+    // The clock stops with the recording, not when the last window finishes
+    // converting: the duration shown is the one that was spoken.
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
+    setDurationMs(Date.now() - startTimeRef.current);
     setState("stopped");
+    setConverting(true);
+
+    // The tail — whatever was captured since the last window.
+    flushWindow();
+
+    void convertChainRef.current.then(() => {
+      if (conversionFailedRef.current) {
+        cleanup();
+        framesRef.current = [];
+        recordedBlobRef.current = null;
+        setConverting(false);
+        setState("idle");
+        setDurationMs(0);
+        setWaveform(new Array(40).fill(0));
+        alert(
+          failureKindRef.current === "upload"
+            ? t("recordingUploadFailed")
+            : t("recordingConvertFailed")
+        );
+        return;
+      }
+
+      recordedBlobRef.current = assembleCapture(framesRef.current);
+      framesRef.current = [];
+      setConverting(false);
+      cleanup();
+    });
   };
 
   const discardRecording = () => {
     cleanup();
+    framesRef.current = [];
     recordedBlobRef.current = null;
+    turnIdRef.current = undefined;
+    uploadWindowRef.current = undefined;
     setState("idle");
     setDurationMs(0);
     setWaveform(new Array(40).fill(0));
@@ -289,7 +470,7 @@ export default function AudioRecorder({ onRecordingComplete, onUserGesture, disa
                     setIsSubmitting(true);
                     const blob = recordedBlobRef.current;
                     if (blob) {
-                      onRecordingComplete(blob, durationMs);
+                      onRecordingComplete(blob, durationMs, turnIdRef.current);
                       recordedBlobRef.current = null; // clear after submit
                     }
                     // Reset to idle so user can record next answer

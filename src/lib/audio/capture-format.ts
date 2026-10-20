@@ -45,24 +45,8 @@ export function encodeWav(buffer: PcmSource): Blob {
   const dataLength = buffer.length * blockAlign;
 
   const bytes = new ArrayBuffer(WAV_HEADER_BYTES + dataLength);
+  new Uint8Array(bytes).set(new Uint8Array(wavHeader(dataLength, sampleRate, numberOfChannels)));
   const view = new DataView(bytes);
-
-  writeAscii(view, 0, "RIFF");
-  /* Size of everything after this field, which is the header remainder plus the samples. */
-  view.setUint32(4, WAV_HEADER_BYTES - 8 + dataLength, true);
-  writeAscii(view, 8, "WAVE");
-  writeAscii(view, 12, "fmt ");
-  /* The fmt chunk is 16 bytes for PCM. */
-  view.setUint32(16, 16, true);
-  view.setUint16(20, WAV_FORMAT_PCM, true);
-  view.setUint16(22, numberOfChannels, true);
-  view.setUint32(24, sampleRate, true);
-  /* How many bytes a second of this is — the number the transport measures. */
-  view.setUint32(28, sampleRate * blockAlign, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, WAV_BIT_DEPTH, true);
-  writeAscii(view, 36, "data");
-  view.setUint32(40, dataLength, true);
 
   const channels: Float32Array[] = [];
   for (let channel = 0; channel < numberOfChannels; channel++) {
@@ -82,6 +66,45 @@ export function encodeWav(buffer: PcmSource): Blob {
   }
 
   return new Blob([bytes], { type: "audio/wav" });
+}
+
+/**
+ * A WAV header for 16-bit PCM, stating a data length the caller already knows.
+ *
+ * Split out because a recording assembled from pieces knows that length before any of the samples
+ * are joined — it is the sum of the pieces — and writing it here keeps the RIFF layout in one
+ * module rather than one per caller. `encodeWav` writes the same header in front of a buffer it is
+ * about to fill.
+ */
+export function wavHeader(
+  dataLength: number,
+  sampleRate: number,
+  numberOfChannels = 1
+): ArrayBuffer {
+  const bytesPerSample = WAV_BIT_DEPTH / 8;
+  const blockAlign = numberOfChannels * bytesPerSample;
+
+  const bytes = new ArrayBuffer(WAV_HEADER_BYTES);
+  const view = new DataView(bytes);
+
+  writeAscii(view, 0, "RIFF");
+  /* Size of everything after this field, which is the header remainder plus the samples. */
+  view.setUint32(4, WAV_HEADER_BYTES - 8 + dataLength, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  /* The fmt chunk is 16 bytes for PCM. */
+  view.setUint32(16, 16, true);
+  view.setUint16(20, WAV_FORMAT_PCM, true);
+  view.setUint16(22, numberOfChannels, true);
+  view.setUint32(24, sampleRate, true);
+  /* How many bytes a second of this is — the number the transport measures. */
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, WAV_BIT_DEPTH, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, dataLength, true);
+
+  return bytes;
 }
 
 function writeAscii(view: DataView, offset: number, text: string) {

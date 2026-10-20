@@ -18,6 +18,8 @@ import {
   type TurnAudioRecovery,
 } from "@/lib/audio/turn-audio-recovery";
 import { apiFetch } from "@/lib/api-client";
+import { createWindowUploader } from "@/lib/audio/window-upload";
+import { WINDOWED_INGEST } from "@/lib/audio/windowed-ingest";
 import { usePlaybackRate } from "@/lib/use-playback-rate";
 
 /**
@@ -292,10 +294,13 @@ export default function VoiceInterviewPage() {
   }
 
   // Fallback to non-streaming turn endpoint
-  async function handleTurnFallback(blob: Blob) {
+  async function handleTurnFallback(blob: Blob, turnId?: string) {
     const formData = new FormData();
     formData.append("sessionId", sessionId);
-    formData.append("audio", blob, "recording.wav");
+    // A windowed turn names what the server already holds and sends no audio: the
+    // recording is assembled there from the windows.
+    if (turnId) formData.append("turnId", turnId);
+    else formData.append("audio", blob, "recording.wav");
 
     try {
       const res = await apiFetch("/api/voice/turn", {
@@ -348,7 +353,7 @@ export default function VoiceInterviewPage() {
     }
   }
 
-  async function handleRecordingComplete(blob: Blob, _durationMs: number) {
+  async function handleRecordingComplete(blob: Blob, _durationMs: number, turnId?: string) {
     void _durationMs;
     if (!data || data.session.status === "completed") return;
 
@@ -459,13 +464,14 @@ export default function VoiceInterviewPage() {
     }
 
     if (!useStreaming) {
-      await handleTurnFallback(blob);
+      await handleTurnFallback(blob, turnId);
       return;
     }
 
     const formData = new FormData();
     formData.append("sessionId", sessionId);
-    formData.append("audio", blob, "recording.wav");
+    if (turnId) formData.append("turnId", turnId);
+    else formData.append("audio", blob, "recording.wav");
 
     const turnAbortCtrl = new AbortController();
     turnAbortRef.current = turnAbortCtrl;
@@ -484,7 +490,7 @@ export default function VoiceInterviewPage() {
       if (!res.ok || !res.body) {
         console.warn("[VoiceInterview] SSE failed, falling back to /api/voice/turn");
         setStreamFallback(true);
-        await handleTurnFallback(blob);
+        await handleTurnFallback(blob, turnId);
         return;
       }
 
@@ -922,6 +928,21 @@ export default function VoiceInterviewPage() {
               )}
               <AudioRecorder
                 onRecordingComplete={handleRecordingComplete}
+                // Off, the recorder hands over the whole recording and the turn
+                // sends it, exactly as before windows existed.
+                windowUploader={
+                  WINDOWED_INGEST
+                    ? (turnId) =>
+                        // Same-origin, through the app's rewrite: the browser talks
+                        // only to whatever served this page, as every other call here does.
+                        createWindowUploader({
+                          fetch: apiFetch,
+                          turnId,
+                          sessionId,
+                          language: data?.session.language,
+                        })
+                    : undefined
+                }
                 onUserGesture={() => {
                   // Every recorder interaction is a user gesture: ensure the
                   // shared AudioContext is running so the next question can
