@@ -78,7 +78,12 @@ function collectPages(dir, prefix = "") {
     const name = entry.name;
     const full = join(dir, name);
     if (entry.isDirectory()) {
-      if (name.startsWith("[")) {
+      if (name === "[locale]") {
+        // The locale is a routing parameter, not a segment this app documents:
+        // every page is nested under it, and the README names pages by the path
+        // after it (/dashboard, not /[locale]/dashboard).
+        results.push(...collectPages(full, prefix));
+      } else if (name.startsWith("[")) {
         // dynamic segment
         const sub = collectPages(full, `${prefix}/[...]`);
         results.push(...sub);

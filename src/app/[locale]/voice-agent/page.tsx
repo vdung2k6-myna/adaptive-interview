@@ -7,6 +7,10 @@ import { useSearchParams } from "next/navigation";
 import AudioRecorder from "@/components/AudioRecorder";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { SentenceAudioQueue } from "@/lib/audio/sentence-queue";
+import { RECORDING_LIMITS } from "@/lib/audio/recording-limits";
+import { createWindowUploader } from "@/lib/audio/window-upload";
+import { WINDOWED_INGEST } from "@/lib/audio/windowed-ingest";
+import { useVadClient } from "@/lib/audio/use-vad-client";
 import { apiFetch } from "@/lib/api-client";
 import { fetchLibrary, type LibraryTrack } from "@/lib/music-library";
 import {
@@ -199,10 +203,13 @@ interface NoticeEvent {
 export default function VoiceAgentPage() {
   const t = useTranslations("voiceAgent");
   const searchParams = useSearchParams();
+  // Started here, not in the recorder: the recorder mounts when a session starts, and
+  // the model should be ready for the first recording rather than fetched then.
+  const vadClient = useVadClient();
   const personaIdDefault = "friendly-partner";
   // Configuration state
   const [language, setLanguage] = useState<"english" | "vietnamese">("english");
-  const [engine, setEngine] = useState<"kokoro" | "piper" | "supertonic">("supertonic");
+  const [engine, setEngine] = useState<"kokoro" | "piper" | "supertonic">("piper");
   const [personaId, setPersonaId] = useState<string>(personaIdDefault);
   /**
    * The personas the page offers: the catalog once it has been read, and the
@@ -252,6 +259,13 @@ export default function VoiceAgentPage() {
   // The queue index the track was enqueued at, so the stop control can cancel
   // that one item without silencing a reply still being spoken.
   const [playingTrackIndex, setPlayingTrackIndex] = useState<number | null>(null);
+  // Whether the queue has reached the chosen track. A track enqueued behind a
+  // reply is waiting, not sounding, and the strip says which (design D4).
+  const [playingTrackStarted, setPlayingTrackStarted] = useState(false);
+  // A chosen track held while the turn is still streaming: the reply's queue is
+  // still receiving sentences, and appending the track now would put it before
+  // them (design D2).
+  const pendingTrackRef = useRef<{ track: LibraryTrack; index: number } | null>(null);
 
   // Audio refs
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -267,6 +281,10 @@ export default function VoiceAgentPage() {
   // Per-turn guards
   const turnGenerationRef = useRef(0);
   const turnAbortRef = useRef<AbortController | null>(null);
+  // True from the moment a turn starts until its stream settles. Read by the
+  // library chooser: appending a track while sentences are still arriving would
+  // put it before them (design D2).
+  const turnStreamingRef = useRef(false);
   const [queueIsPlaying, setQueueIsPlaying] = useState(false);
   /**
    * Whether the turn's sentences should be played, read *by the reading loop*
@@ -336,15 +354,28 @@ export default function VoiceAgentPage() {
       onStart: (index) => {
         console.log(`[VoiceAgent] Audio started index=${index}`);
         setQueueIsPlaying(true);
+        // The queue reached a person-chosen track: it is sounding now rather
+        // than waiting behind the reply. Reply sentences carry the turn's own
+        // indices, which stay below the music base.
+        if (index >= MUSIC_INDEX_BASE) {
+          setPlayingTrackStarted(true);
+        }
       },
       onEnd: (index) => {
         console.log(`[VoiceAgent] Audio ended index=${index}`);
+        // A person's track ends here. The turn's queue finishing is not the same
+        // event: a held track is still waiting when the reply drains (design D2).
+        if (index >= MUSIC_INDEX_BASE) {
+          setPlayingTrack(null);
+          setPlayingTrackIndex(null);
+          setPlayingTrackStarted(false);
+        }
       },
       onFinished: () => {
         console.log(`[VoiceAgent] Audio queue finished`);
+        // The strip is not taken down here: a held track has not played, and a
+        // person's track ends in onEnd above.
         setQueueIsPlaying(false);
-        setPlayingTrack(null);
-        setPlayingTrackIndex(null);
       },
       onError: (index, err) => {
         console.warn(`[VoiceAgent] Audio error index=${index}:`, err);
@@ -354,6 +385,7 @@ export default function VoiceAgentPage() {
           // left as a strip claiming to play something that is not playing (design D2).
           setPlayingTrack(null);
           setPlayingTrackIndex(null);
+          setPlayingTrackStarted(false);
           setNotice(t("musicGone"));
         }
       },
@@ -396,19 +428,55 @@ export default function VoiceAgentPage() {
     const queue = sentenceQueueRef.current ?? makeQueue();
     if (!queue) return;
 
+    // One person-chosen track at a time (design D4): a new choice replaces the
+    // previous one instead of stacking behind it, so the strip and its stop
+    // always describe the whole of what the person chose. A held choice is
+    // replaced by replacing the ref; one already in the queue is cancelled.
+    if (playingTrackIndex !== null) {
+      queue.cancel(playingTrackIndex);
+    }
+    pendingTrackRef.current = null;
+
     const index = MUSIC_INDEX_BASE + at;
-    queue.enqueue(index, trackUrl(track.url), track.title);
+    // Set before enqueueing: an idle queue reaches the track inside enqueue and
+    // reports onStart synchronously, which must be the later word.
+    setPlayingTrackStarted(false);
     setPlayingTrack(track);
     setPlayingTrackIndex(index);
+
+    // The reply's queue is still being filled while the turn streams. Appending
+    // now would start the track before sentences that have not arrived yet, so
+    // hold it until the turn settles (design D2). The ref, not `processing`,
+    // because the await above may have outlived the turn.
+    if (turnStreamingRef.current) {
+      pendingTrackRef.current = { track, index };
+      return;
+    }
+
+    queue.enqueue(index, trackUrl(track.url), track.title);
   }
+
+  // A held choice waits for the turn's sentence stream to end. Once it has, every
+  // sentence is in the queue, and appending the track puts it behind the whole
+  // reply (design D2).
+  useEffect(() => {
+    if (processing) return;
+    const pending = pendingTrackRef.current;
+    if (!pending) return;
+    pendingTrackRef.current = null;
+    sentenceQueueRef.current?.enqueue(
+      pending.index,
+      trackUrl(pending.track.url),
+      pending.track.title
+    );
+  }, [processing]);
 
   /**
    * Stop what the person started.
    *
    * The page's other stop paths cancel a *turn* — an abort of the stream and the queue that belongs to
-   * it — and a track picked from the library outside a turn is not one, which is what this is for. It
-   * stops the one queue, so a reply still being spoken stops with it: one speaker, and the person asked
-   * for silence (design D4, D5).
+   * it — and a track picked from the library outside a turn is not one, which is what this is for. The
+   * stop is targeted at the track: a reply still being spoken continues (design D4).
    */
   function stopPlaying() {
     // Cancel the track, not the speaker. A reply already being spoken continues:
@@ -420,8 +488,10 @@ export default function VoiceAgentPage() {
     } else {
       sentenceQueueRef.current?.stop();
     }
+    pendingTrackRef.current = null;
     setPlayingTrack(null);
     setPlayingTrackIndex(null);
+    setPlayingTrackStarted(false);
     // The queue is the authority: it is still playing if the reply continued,
     // and the callbacks above keep this in step when it finishes.
     setQueueIsPlaying(sentenceQueueRef.current?.getIsPlaying() ?? false);
@@ -522,7 +592,7 @@ export default function VoiceAgentPage() {
 
       let resolvedPersona = personaIdDefault;
       let resolvedLang: "english" | "vietnamese" = "english";
-      let resolvedEngine: "kokoro" | "piper" | "supertonic" = "supertonic";
+      let resolvedEngine: "kokoro" | "piper" | "supertonic" = "piper";
 
       // Validate URL persona — exactly, since an id that is not a persona has to
       // fall back to the default rather than become a selection with no option
@@ -697,6 +767,7 @@ export default function VoiceAgentPage() {
 
   function resetConversation() {
     cleanupStreamState();
+    pendingTrackRef.current = null;
     setConfig(null);
     setMessages([]);
     setError("");
@@ -753,9 +824,13 @@ export default function VoiceAgentPage() {
   async function sendTurn(
     activeConfig: AgentConfig,
     currentMessages: AgentMessage[],
-    input: { type: "audio"; blob: Blob; durationMs: number } | { type: "text"; text: string } | null
+    input:
+      | { type: "audio"; blob: Blob; durationMs: number; turnId?: string }
+      | { type: "text"; text: string }
+      | null
   ) {
     const myGen = ++turnGenerationRef.current;
+    turnStreamingRef.current = true;
 
     if (turnAbortRef.current) {
       turnAbortRef.current.abort();
@@ -770,8 +845,10 @@ export default function VoiceAgentPage() {
 
     // A turn takes the speaker: a track the person started out of the library stops here, and the strip
     // that names it comes down, because what is playing from now on is the reply.
+    pendingTrackRef.current = null;
     setPlayingTrack(null);
     setPlayingTrackIndex(null);
+    setPlayingTrackStarted(false);
     makeQueue();
 
     // Reset per-turn streaming state
@@ -799,7 +876,10 @@ export default function VoiceAgentPage() {
     );
 
     if (input?.type === "audio") {
-      formData.append("audio", input.blob, "recording.wav");
+      // A windowed turn names what the server already holds and sends no audio:
+      // the windows were sent while the answer was being spoken.
+      if (input.turnId) formData.append("turnId", input.turnId);
+      else formData.append("audio", input.blob, "recording.wav");
     } else if (input?.type === "text") {
       formData.append("text", input.text);
       // A prefetch held for exactly this text is this turn's knowledge, already
@@ -1052,15 +1132,20 @@ export default function VoiceAgentPage() {
       setProcessingStep("");
       stopThinkingTimer();
     } finally {
+      // Only the turn that is still current may clear the flag: a newer turn
+      // sets it for itself before this one's finally runs.
+      if (myGen === turnGenerationRef.current) {
+        turnStreamingRef.current = false;
+      }
       if (turnAbortRef.current === turnAbortCtrl) {
         turnAbortRef.current = null;
       }
     }
   }
 
-  async function handleRecordingComplete(blob: Blob, durationMs: number) {
+  async function handleRecordingComplete(blob: Blob, durationMs: number, turnId?: string) {
     if (!config) return;
-    await sendTurn(config, messages, { type: "audio", blob, durationMs });
+    await sendTurn(config, messages, { type: "audio", blob, durationMs, turnId });
   }
 
   async function handleTextSubmit(e: React.FormEvent) {
@@ -1734,7 +1819,10 @@ export default function VoiceAgentPage() {
           {playingTrack && (
             <div className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800">
               <span className="truncate text-zinc-800 dark:text-zinc-200">
-                🎵 {t("musicNowPlaying", { title: playingTrack.title })}
+                🎵{" "}
+                {playingTrackStarted
+                  ? t("musicNowPlaying", { title: playingTrack.title })
+                  : t("musicQueued", { title: playingTrack.title })}
               </span>
               <button
                 type="button"
@@ -1805,6 +1893,25 @@ export default function VoiceAgentPage() {
           {inputMode === "voice" ? (
             <AudioRecorder
               onRecordingComplete={handleRecordingComplete}
+              vadClient={vadClient}
+              // A conversation: a pause ends the turn, and the turn is sent without
+              // asking for a second click.
+              limits={RECORDING_LIMITS.voiceAgent}
+              autoSubmit
+              // Off, the recorder hands over the whole recording and the turn
+              // sends it, exactly as before windows existed.
+              windowUploader={
+                WINDOWED_INGEST
+                  ? (turnId) =>
+                      // Same-origin, through the app's rewrite: the browser talks
+                      // only to whatever served this page, as every other call here does.
+                      createWindowUploader({
+                        fetch: apiFetch,
+                        turnId,
+                        language: config?.language,
+                      })
+                  : undefined
+              }
               onUserGesture={() => {
                 void initAudioContext();
               }}
