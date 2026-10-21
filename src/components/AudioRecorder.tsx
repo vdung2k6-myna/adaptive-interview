@@ -15,6 +15,12 @@ import {
   ENDPOINTER_TUNING,
   type RecordingLimits,
 } from "@/lib/audio/recording-limits";
+import {
+  createSpeechFrameResampler,
+  samplesForMs,
+  type SpeechFrameResampler,
+} from "@/lib/audio/resample";
+import type { VadClient } from "@/lib/audio/vad-client";
 
 interface AudioRecorderProps {
   /**
@@ -47,6 +53,14 @@ interface AudioRecorderProps {
    * step. The voice agent sends; the interview keeps its confirmation.
    */
   autoSubmit?: boolean;
+  /**
+   * The speech classifier, owned by the page.
+   *
+   * Passed in rather than created here because the recorder is not mounted until a
+   * session starts: a page that wants the model ready for the first recording has to
+   * start loading it before this component exists.
+   */
+  vadClient?: VadClient | null;
   onUserGesture?: () => void;
   disabled?: boolean;
 }
@@ -132,11 +146,40 @@ async function renderWindow(blocks: Float32Array[][], sourceRate: number): Promi
   return toPcm16((await context.startRendering()).getChannelData(0));
 }
 
+/**
+ * Join the blocks captured since the last judged frame into one array per channel.
+ *
+ * The worklet delivers 128-sample blocks; a frame is judged and classified every
+ * `frameMs`, so the blocks are joined once rather than per sample. Only the frame's
+ * own span is copied — the window path keeps the original blocks untouched.
+ */
+function concatBlocks(blocks: Float32Array[][], channelCount: number): Float32Array[] {
+  const joined: Float32Array[] = [];
+
+  for (let channel = 0; channel < channelCount; channel++) {
+    let length = 0;
+    for (const block of blocks) length += block[channel]?.length ?? 0;
+
+    const samples = new Float32Array(length);
+    let offset = 0;
+    for (const block of blocks) {
+      const data = block[channel];
+      if (!data) continue;
+      samples.set(data, offset);
+      offset += data.length;
+    }
+    joined.push(samples);
+  }
+
+  return joined;
+}
+
 export default function AudioRecorder({
   onRecordingComplete,
   windowUploader,
   limits,
   autoSubmit,
+  vadClient,
   onUserGesture,
   disabled,
 }: AudioRecorderProps) {
@@ -177,8 +220,12 @@ export default function AudioRecorder({
   const recordingRef = useRef(false);
   /** The recording's ending decision, fed from the worklet's own blocks. */
   const endpointerRef = useRef<RecordingEndpointer | null>(null);
-  /** Energy accumulated toward the next ~20 ms frame the endpointer judges. */
-  const vadAccumRef = useRef({ sumSquares: 0, samples: 0 });
+  /** Blocks accumulated toward the next analysis frame the endpointer judges. */
+  const vadBlocksRef = useRef<Float32Array[][]>([]);
+  /** Frames those blocks hold; the frame is judged once it reaches the analysis size. */
+  const vadPendingRef = useRef(0);
+  /** Turns captured blocks into the model's contiguous 16 kHz frames. */
+  const vadResamplerRef = useRef<SpeechFrameResampler | null>(null);
   /** Whether this recording has already been handed to the page. */
   const submittedRef = useRef(false);
   /** The turn this recording is being sent under, when windowed ingestion is on. */
@@ -276,7 +323,9 @@ export default function AudioRecorder({
     failureKindRef.current = null;
     recordedBlobRef.current = null;
     endpointerRef.current = null;
-    vadAccumRef.current = { sumSquares: 0, samples: 0 };
+    vadBlocksRef.current = [];
+    vadPendingRef.current = 0;
+    vadResamplerRef.current = null;
     submittedRef.current = false;
 
     // One id per recording, invented here because this is the moment the first
@@ -320,10 +369,18 @@ export default function AudioRecorder({
       const sourceRate = audioContext.sampleRate;
       const endpointer = createRecordingEndpointer({ sampleRate: sourceRate, limits });
       endpointerRef.current = endpointer;
-      const vadFrameSamples = Math.max(
-        1,
-        Math.round((sourceRate * ENDPOINTER_TUNING.frameMs) / 1_000)
-      );
+      const vadFrameSamples = samplesForMs(sourceRate, ENDPOINTER_TUNING.frameMs);
+
+      // A recording started before the model finished loading runs on the level gate
+      // for its whole life. Switching signals mid-recording would reset the model's
+      // state and change the rule the same turn is judged by.
+      const classifier = vadClient?.status() === "ready" ? vadClient : null;
+      vadResamplerRef.current = classifier
+        ? createSpeechFrameResampler(sourceRate)
+        : null;
+      vadBlocksRef.current = [];
+      vadPendingRef.current = 0;
+      classifier?.reset();
 
       worklet.port.onmessage = (event: MessageEvent<Float32Array[]>) => {
         if (!recordingRef.current) return;
@@ -337,29 +394,44 @@ export default function AudioRecorder({
           flushWindow();
         }
 
-        // Whether the person is still speaking is judged from the same samples the
-        // windows are built from, in ~20 ms frames. Time comes from the sample count,
-        // never from the display clock: a background tab throttles `setInterval`, and a
-        // throttled timer must not be able to hold the microphone open.
-        let sumSquares = 0;
-        let sampleCount = 0;
-        for (const channel of channels) {
-          for (let index = 0; index < channel.length; index++) {
-            const sample = channel[index]!;
-            sumSquares += sample * sample;
+        // The model reads its own contiguous 512-sample 16 kHz frames, so it is fed
+        // every block as it arrives, independently of the analysis frame below. When
+        // it is one frame behind — the client allows one in flight — the previous
+        // probability is reused, which is 32 ms against a 300 ms speech minimum.
+        const resampler = vadResamplerRef.current;
+        if (resampler && classifier) {
+          for (const frame of resampler.push(channels)) {
+            classifier.observe(frame);
           }
-          sampleCount += channel.length;
         }
-        const vad = vadAccumRef.current;
-        vad.sumSquares += sumSquares;
-        vad.samples += sampleCount;
-        if (vad.samples >= vadFrameSamples) {
-          const rms = Math.sqrt(vad.sumSquares / vad.samples);
-          const judgedSamples = vad.samples;
-          vad.sumSquares = 0;
-          vad.samples = 0;
 
-          const verdict = endpointer.push(rms, judgedSamples);
+        // Whether the person is still speaking is judged from the same samples the
+        // windows are built from, in one analysis frame. Time comes from the frame
+        // count, never from the display clock: a background tab throttles
+        // `setInterval`, and a throttled timer must not hold the microphone open.
+        vadBlocksRef.current.push(channels);
+        vadPendingRef.current += frames;
+
+        if (vadPendingRef.current >= vadFrameSamples) {
+          const judged = concatBlocks(vadBlocksRef.current, Math.max(1, channels.length));
+          vadBlocksRef.current = [];
+          vadPendingRef.current = 0;
+
+          let sumSquares = 0;
+          for (const channel of judged) {
+            for (let index = 0; index < channel.length; index++) {
+              const sample = channel[index]!;
+              sumSquares += sample * sample;
+            }
+          }
+
+          // Duration is frames, not channel samples: a stereo stream is twice the
+          // samples of a mono one for the same 32 ms.
+          const judgedFrames = judged[0]?.length ?? 0;
+          const rms = judgedFrames > 0 ? Math.sqrt(sumSquares / (judgedFrames * judged.length)) : 0;
+          const probability = classifier?.probability();
+
+          const verdict = endpointer.push(rms, judgedFrames, probability);
           if (verdict === "end" || verdict === "cap") {
             stopRecording();
           } else if (verdict === "giveup") {
@@ -481,7 +553,9 @@ export default function AudioRecorder({
     framesRef.current = [];
     recordedBlobRef.current = null;
     endpointerRef.current = null;
-    vadAccumRef.current = { sumSquares: 0, samples: 0 };
+    vadBlocksRef.current = [];
+    vadPendingRef.current = 0;
+    vadResamplerRef.current = null;
     submittedRef.current = false;
     turnIdRef.current = undefined;
     uploadWindowRef.current = undefined;

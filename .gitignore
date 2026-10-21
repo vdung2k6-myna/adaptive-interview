@@ -41,6 +41,10 @@ yarn-error.log*
 next-env.d.ts
 pipervoices*
 
+# ONNX Runtime WASM, copied from node_modules by `npm run vad:assets`.
+# The model beside it is tracked; the runtime is build output.
+/public/vad/ort-*
+
 # python
 __pycache__/
 *.py[cod]

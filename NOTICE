@@ -1,0 +1,25 @@
+# NOTICE — Third-Party Licensing
+
+This repository's application code is licensed under the MIT License.
+
+## Model weights
+
+### Silero VAD v5.1.2
+
+- **Where it comes from:** `public/vad/silero_vad.onnx`, copied from the
+  `v5.1.2` tag of https://github.com/snakers4/silero-vad. Its SHA-256 is
+  recorded in `public/vad/silero_vad.onnx.sha256` and checked by
+  `scripts/copy-vad-assets.mjs` on every dev and production build.
+- **License:** MIT. The model is distributed under the same license as the
+  repository that publishes it.
+- **What it does here:** classifies an audio frame as speech or not. It does
+  not transcribe, identify a speaker, or retain audio.
+
+## Runtime
+
+### ONNX Runtime Web 1.30.0
+
+- **Where it comes from:** the `onnxruntime-web` package pinned in
+  `package.json`; its WebAssembly runtime is copied into `public/vad/` at build
+  time and is not tracked in this repository.
+- **License:** MIT.

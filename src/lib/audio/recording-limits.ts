@@ -107,9 +107,11 @@ export const RECORDING_LIMITS = readRecordingLimits({
  * speaker; in a room loud enough to sit above that clamp, everything sounds voiced and
  * the maximum duration is what ends the recording.
  *
- * `frameMs` is the aggregation the recorder does before calling the endpointer: a
- * 128-sample worklet block is about 2.7 ms at 48 kHz, which is finer than any speech
- * decision needs.
+ * `frameMs` is the aggregation the recorder does before calling the endpointer. It is
+ * 32 ms because the voice-activity model reads 512 samples at 16 kHz and carries state
+ * between calls: the RMS and the model must judge the same chunk, or the two signals
+ * describe different audio. A 128-sample worklet block is about 2.7 ms at 48 kHz, so
+ * several blocks are aggregated to reach it.
  */
 export interface EndpointerTuning {
   vadMinRms: number;
@@ -126,5 +128,5 @@ export const ENDPOINTER_TUNING: EndpointerTuning = {
   vadMaxGateRms: 0.06,
   quietWindowMs: 600,
   quietMinMs: 400,
-  frameMs: 20,
+  frameMs: 32,
 };

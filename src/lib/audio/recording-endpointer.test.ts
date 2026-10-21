@@ -44,6 +44,31 @@ function feedUntilVerdict(
   return { verdict, elapsedMs: ep.elapsedMs() };
 }
 
+/** Feed `ms` in 20 ms frames at one level and one speech probability. */
+function feedWith(
+  ep: RecordingEndpointer,
+  rms: number,
+  ms: number,
+  probability: number
+): EndpointVerdict {
+  return ep.push(rms, Math.round((ms / 1_000) * RATE), probability);
+}
+
+/** The first verdict from feeding `ms` with a fixed level and probability. */
+function feedWithUntilVerdict(
+  ep: RecordingEndpointer,
+  rms: number,
+  ms: number,
+  probability: number
+): EndpointVerdict {
+  let verdict: EndpointVerdict = "wait";
+  for (let taken = 0; taken < ms; taken += 20) {
+    verdict = feedWith(ep, rms, 20, probability);
+    if (verdict !== "wait") return verdict;
+  }
+  return verdict;
+}
+
 const LIMITS: RecordingLimits = {
   minSpeechMs: 300,
   silenceMs: 1_000,
@@ -204,6 +229,66 @@ describe("the abandonment bound", () => {
 
     feedUntilVerdict(ep, 0.2, 1_000);
     assert.equal(feed(ep, 0.2, 20), "cap");
+  });
+});
+
+describe("the voice-activity vote", () => {
+  it("does not count a loud frame the model calls non-speech", () => {
+    const ep = endpointer();
+    const verdict = feedWithUntilVerdict(ep, 0.5, LIMITS.noSpeechMs, 0);
+
+    assert.equal(verdict, "giveup");
+    assert.equal(ep.hasHeardSpeech(), false, "loud room noise must not become speech");
+  });
+
+  it("counts a speech-classified frame above the gate", () => {
+    const ep = endpointer();
+
+    for (let taken = 0; taken < LIMITS.minSpeechMs; taken += 20) {
+      assert.equal(feedWith(ep, 0.5, 20, 0.9), "wait");
+    }
+    assert.equal(ep.hasHeardSpeech(), true);
+
+    assert.equal(feedWithUntilVerdict(ep, 0.0, LIMITS.silenceMs, 0.0), "end");
+  });
+
+  it("does not count a speech-classified frame below the gate", () => {
+    const ep = endpointer();
+    const verdict = feedWithUntilVerdict(ep, 0.0, LIMITS.noSpeechMs, 1);
+
+    assert.equal(verdict, "giveup");
+    assert.equal(ep.hasHeardSpeech(), false);
+  });
+
+  it("uses the level gate alone when no probability is given", () => {
+    const ep = endpointer();
+
+    for (let taken = 0; taken < LIMITS.minSpeechMs; taken += 20) {
+      assert.equal(feed(ep, 0.5, 20), "wait");
+    }
+    assert.equal(ep.hasHeardSpeech(), true);
+  });
+
+  it("takes the threshold as a floor, not a majority", () => {
+    const below = endpointer();
+    for (let taken = 0; taken < LIMITS.minSpeechMs; taken += 20) {
+      feedWith(below, 0.5, 20, 0.49);
+    }
+    assert.equal(below.hasHeardSpeech(), false);
+
+    const at = endpointer();
+    for (let taken = 0; taken < LIMITS.minSpeechMs; taken += 20) {
+      feedWith(at, 0.5, 20, 0.5);
+    }
+    assert.equal(at.hasHeardSpeech(), true);
+  });
+
+  it("does not count an answer the model could not express", () => {
+    const ep = endpointer();
+    const verdict = feedWithUntilVerdict(ep, 0.5, LIMITS.noSpeechMs, Number.NaN);
+
+    assert.equal(verdict, "giveup");
+    assert.equal(ep.hasHeardSpeech(), false);
   });
 });
 

@@ -10,6 +10,7 @@ import { SentenceAudioQueue } from "@/lib/audio/sentence-queue";
 import { RECORDING_LIMITS } from "@/lib/audio/recording-limits";
 import { createWindowUploader } from "@/lib/audio/window-upload";
 import { WINDOWED_INGEST } from "@/lib/audio/windowed-ingest";
+import { useVadClient } from "@/lib/audio/use-vad-client";
 import { apiFetch } from "@/lib/api-client";
 import { fetchLibrary, type LibraryTrack } from "@/lib/music-library";
 import {
@@ -202,10 +203,13 @@ interface NoticeEvent {
 export default function VoiceAgentPage() {
   const t = useTranslations("voiceAgent");
   const searchParams = useSearchParams();
+  // Started here, not in the recorder: the recorder mounts when a session starts, and
+  // the model should be ready for the first recording rather than fetched then.
+  const vadClient = useVadClient();
   const personaIdDefault = "friendly-partner";
   // Configuration state
   const [language, setLanguage] = useState<"english" | "vietnamese">("english");
-  const [engine, setEngine] = useState<"kokoro" | "piper" | "supertonic">("supertonic");
+  const [engine, setEngine] = useState<"kokoro" | "piper" | "supertonic">("piper");
   const [personaId, setPersonaId] = useState<string>(personaIdDefault);
   /**
    * The personas the page offers: the catalog once it has been read, and the
@@ -588,7 +592,7 @@ export default function VoiceAgentPage() {
 
       let resolvedPersona = personaIdDefault;
       let resolvedLang: "english" | "vietnamese" = "english";
-      let resolvedEngine: "kokoro" | "piper" | "supertonic" = "supertonic";
+      let resolvedEngine: "kokoro" | "piper" | "supertonic" = "piper";
 
       // Validate URL persona — exactly, since an id that is not a persona has to
       // fall back to the default rather than become a selection with no option
@@ -1889,6 +1893,7 @@ export default function VoiceAgentPage() {
           {inputMode === "voice" ? (
             <AudioRecorder
               onRecordingComplete={handleRecordingComplete}
+              vadClient={vadClient}
               // A conversation: a pause ends the turn, and the turn is sent without
               // asking for a second click.
               limits={RECORDING_LIMITS.voiceAgent}

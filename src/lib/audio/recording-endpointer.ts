@@ -20,6 +20,13 @@
  * its maximum. The recorder treats the first two differently — one is sent, one is
  * discarded — so folding them into a boolean would lose the difference the product
  * depends on.
+ *
+ * **The gate is not the only vote.** A frame can also be handed a speech probability
+ * from the voice-activity model, and then it counts as voiced only when it is above the
+ * gate *and* the model says speech. The gate answers "louder than this room"; the model
+ * answers "a voice" — and in a noisy room those are different questions. An absent
+ * probability is the level gate alone, which is what a deployment with the classifier
+ * disabled, or one whose model failed to load, runs on.
  */
 
 import {
@@ -27,6 +34,7 @@ import {
   type EndpointerTuning,
   type RecordingLimits,
 } from "./recording-limits.ts";
+import { VAD_SPEECH_THRESHOLD } from "./voice-activity.ts";
 
 export type EndpointVerdict = "wait" | "end" | "giveup" | "cap";
 
@@ -40,8 +48,10 @@ export interface RecordingEndpointer {
   /**
    * Fold one frame in. `samples` is the frame's length, which is where elapsed time
    * comes from; `rms` is its level, in the same scale as the captured Float32 samples.
+   * `speechProbability` is the voice-activity model's answer for the same frame, or
+   * undefined when there is no classifier to ask (the level gate alone).
    */
-  push: (rms: number, samples: number) => EndpointVerdict;
+  push: (rms: number, samples: number, speechProbability?: number) => EndpointVerdict;
   /** Whether sustained speech has been heard — what decides a track ending's meaning. */
   hasHeardSpeech: () => boolean;
   /** Recording time, counted from the samples handed in. */
@@ -88,7 +98,7 @@ export function createRecordingEndpointer({
   };
 
   return {
-    push(rms, samples) {
+    push(rms, samples, speechProbability) {
       // A verdict is final: the recorder stops feeding an endpointer it has acted on,
       // and a stray frame in the same batch must not change what was decided.
       if (reached) return reached;
@@ -103,7 +113,9 @@ export function createRecordingEndpointer({
       const adaptive = Math.min(tuning.vadMaxGateRms, floor * tuning.vadFloorRatio);
       gate = Math.max(tuning.vadMinRms, adaptive);
 
-      const voiced = rms >= gate;
+      const voiced =
+        rms >= gate &&
+        (speechProbability === undefined || speechProbability >= VAD_SPEECH_THRESHOLD);
 
       if (voiced) {
         speechRunMs += ms;

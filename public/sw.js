@@ -3,6 +3,9 @@
  *
  * Caching strategy:
  * - Static Next.js build assets (`/_next/static/*`): cache-first, immutable.
+ * - Speech-classification assets (`/vad/*`): cache-first. The model and the ONNX
+ *   Runtime were pinned by the deployment that served them, and the cache they enter
+ *   is named after that deployment's build.
  * - HTML navigation requests: network-first with offline fallback.
  * - API calls (`/api/*`): bypassed — this worker never caches them, and relaying
  *   them would bound a streamed response's lifetime by the worker's.
@@ -26,6 +29,7 @@ const ASSET_CACHE = `assets-${CACHE_VERSION}`;
 const SHELL_URLS = ["/", "/offline.html", "/manifest.json"];
 
 const IMMUTABLE_ASSET_PATTERN = /\/_next\/static\//;
+const VAD_ASSET_PATTERN = /\/vad\//;
 const API_PATTERN = /^\/api\//;
 
 self.addEventListener("install", (event) => {
@@ -80,8 +84,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Immutable Next.js build assets — cache first
-  if (IMMUTABLE_ASSET_PATTERN.test(url.pathname)) {
+  // Immutable build assets and the pinned VAD assets — cache first
+  if (IMMUTABLE_ASSET_PATTERN.test(url.pathname) || VAD_ASSET_PATTERN.test(url.pathname)) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) {

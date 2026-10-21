@@ -21,6 +21,7 @@ import { apiFetch } from "@/lib/api-client";
 import { RECORDING_LIMITS } from "@/lib/audio/recording-limits";
 import { createWindowUploader } from "@/lib/audio/window-upload";
 import { WINDOWED_INGEST } from "@/lib/audio/windowed-ingest";
+import { useVadClient } from "@/lib/audio/use-vad-client";
 import { usePlaybackRate } from "@/lib/use-playback-rate";
 
 /**
@@ -90,6 +91,9 @@ export default function VoiceInterviewPage() {
   const tCommon = useTranslations("common");
   const params = useParams();
   const sessionId = params.id as string;
+  // Started with the page, so the recorder does not begin its first answer on the
+  // level gate while a 16 MB model is still arriving.
+  const vadClient = useVadClient();
 
   /**
    * What to show for a `notice` — the server's gentle channel for a turn where
@@ -929,6 +933,7 @@ export default function VoiceInterviewPage() {
               )}
               <AudioRecorder
                 onRecordingComplete={handleRecordingComplete}
+                vadClient={vadClient}
                 // An interview answer: a long pause is thinking, and the person keeps
                 // the submit/discard step before anything reaches the interviewer.
                 limits={RECORDING_LIMITS.interview}

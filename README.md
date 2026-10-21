@@ -108,13 +108,14 @@ src/
 ├── components/                   # Shared React components
 │   ├── MarkdownRenderer.tsx      # Rich Markdown with syntax highlighting
 │   ├── AudioPlayer.tsx           # HTML5 audio playback
-│   ├── AudioRecorder.tsx         # Microphone capture + waveform
+│   ├── AudioRecorder.tsx         # Microphone capture, waveform, end-of-turn detection
 │   ├── StreamingAudioQueue.tsx   # Sentence-level audio queue
 │   ├── ScoreInput.tsx            # Star score input
 │   ├── ModelBadge.tsx            # Model name badge
 │   ├── VersionHistory.tsx        # Evaluation version list
 │   ├── DeleteButton.tsx          # Confirmation delete button
-│   └── MobileNav.tsx             # Small-screen hamburger navigation
+│   ├── MobileNav.tsx             # Small-screen hamburger navigation
+│   └── LanguageSwitcher.tsx      # Locale switcher
 └── lib/                          # Frontend utilities only
     ├── api-client.ts             # Browser fetch wrapper with Bearer token injection
     ├── config/                   # Frontend environment config
@@ -163,7 +164,21 @@ NEXT_PUBLIC_VOICE_AGENT_MAX_RECORDING_MS=120000
 NEXT_PUBLIC_INTERVIEW_SILENCE_MS=3000
 NEXT_PUBLIC_INTERVIEW_NO_SPEECH_MS=15000
 NEXT_PUBLIC_INTERVIEW_MAX_RECORDING_MS=600000
+
+# Speech classification (optional; on unless this is the literal "false"). A frame
+# counts as speech only when it clears the room gate AND the model calls it speech,
+# so a loud fan or a keyboard does not become an answer. The voice pages fetch the
+# pinned model and its runtime from /vad/ on first load (~16 MB, cached by the
+# service worker). If that fails, the recorder falls back to the level gate alone
+# and keeps working; the fallback is logged once.
+NEXT_PUBLIC_VAD_ENABLED=true
 ```
+
+The recorder's speech classifier is Silero VAD v5, run in a Web Worker through ONNX
+Runtime Web. It is the second opinion the level gate cannot provide: the gate answers
+"louder than this room", and the model answers "a voice". A model that cannot load, or
+an inference that fails, degrades to the gate rather than failing the recording — so a
+noisy room changes when a turn ends, never whether one can be taken.
 
 Database, Ollama, audio service, and MCP variables live in the backend's `.env`. See [backend setup](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/SETUP.md).
 
@@ -237,6 +252,33 @@ Recording limits are optional. Their defaults and variables are listed under [En
 3. **Completion** — after max turns (default 8), the interview ends and evaluation becomes available
 4. **Voice Agent** (`/voice-agent`) — ephemeral voice/text chat with a configurable AI persona, no database persistence
 
+### Page Routes
+
+Every page is served under a locale segment; these are the routes after it.
+
+| Route | Purpose |
+|-------|---------|
+| `/` | Redirects to the dashboard |
+| `/dashboard` | Session list, filters, and interview links |
+| `/setup` | Create an interview from a position and a candidate |
+| `/compare` | Side-by-side candidate comparison |
+| `/positions` | Position list |
+| `/positions/new` | Create a position |
+| `/positions/[id]/edit` | Edit a position |
+| `/candidates` | Candidate list |
+| `/candidates/new` | Create a candidate |
+| `/candidates/[id]/edit` | Edit a candidate |
+| `/campaigns` | Campaign list and metrics |
+| `/campaigns/new` | Create a campaign |
+| `/campaigns/[id]` | Campaign detail |
+| `/interview/[id]` | Text interview |
+| `/interview/[id]/voice` | Voice interview, including the recorder's end-of-turn detection |
+| `/interview/[id]/transcript` | Transcript and evaluation |
+| `/voice-agent` | Ephemeral persona conversation |
+| `/voice-agent/history` | Past voice-agent sessions |
+| `/offline` | PWA offline fallback |
+| `/cors-test` | Development-only CORS probe |
+
 ---
 
 ## Scripts
@@ -245,9 +287,14 @@ Recording limits are optional. Their defaults and variables are listed under [En
 |---------|-------------|
 | `npm run dev` | Start dev server (port 3000) |
 | `npm run dev:3001` | Start dev server on port 3001 |
+| `npm run dev:4000` | Start dev server on port 4000 |
+| `npm run predev`, `npm run predev:3001`, `npm run predev:4000`, `npm run prebuild` | Provision `public/vad/` before a dev server or build (runs `npm run vad:assets`) |
+| `npm run vad:assets` | Check the pinned speech model's SHA-256 and copy the ONNX Runtime WASM into `public/vad/` |
 | `npm run build` | Production build (outputs `.next/standalone/`) |
 | `npm start` | Start production server from standalone bundle |
 | `npm run lint` | ESLint check |
+| `npm run check:readme` | Check that the README matches the app's routes, components, and scripts |
+| `npm run pwa:assets` | Regenerate the PWA icon set |
 
 > **Tip:** To use any port: `npx next dev -p {port}`.
 
