@@ -745,7 +745,7 @@ export default function VoiceInterviewPage() {
               setLoading(true);
               fetchSession();
             }}
-            className="min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-50 dark:text-zinc-900"
+            className="min-h-11 rounded-lg bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-50 dark:text-zinc-900"
           >
             {t("retry")}
           </button>
@@ -773,7 +773,7 @@ export default function VoiceInterviewPage() {
           </p>
           <button
             onClick={handleStartInterview}
-            className="min-h-[48px] rounded-lg bg-zinc-900 px-6 py-3 text-base font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="min-h-12 rounded-lg bg-zinc-900 px-6 py-3 text-base font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             🎙️ {t("startInterview")}
           </button>
@@ -801,7 +801,7 @@ export default function VoiceInterviewPage() {
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={() => setUseStreaming((s) => !s)}
-                className="min-h-[44px] text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                className="min-h-11 text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
                 title="Toggle streaming mode"
               >
                 {useStreaming ? "🌊 Streaming" : "⏹ Standard"}
@@ -811,7 +811,7 @@ export default function VoiceInterviewPage() {
                 onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
                 aria-label={t("playbackRate")}
                 title={t("playbackRate")}
-                className="min-h-[44px] rounded-lg border border-zinc-300 bg-white px-2 py-1 text-base text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                className="min-h-11 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-base text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
               >
                 <option value={0.5}>0.5x</option>
                 <option value={0.75}>0.75x</option>
@@ -917,7 +917,7 @@ export default function VoiceInterviewPage() {
               </p>
               <Link
                 href={`/interview/${sessionId}/transcript`}
-                className="mt-2 inline-flex min-h-[44px] items-center justify-center rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="mt-2 inline-flex min-h-11 items-center justify-center rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 {t("viewTranscript")}
               </Link>

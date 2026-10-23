@@ -1383,7 +1383,7 @@ export default function VoiceAgentPage() {
         <div className="mx-auto max-w-xl">
           <Link
             href="/dashboard"
-            className="mb-4 inline-block min-h-[44px] text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+            className="mb-4 inline-block min-h-11 text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
           >
             ← Back to Dashboard
           </Link>
@@ -1415,7 +1415,7 @@ export default function VoiceAgentPage() {
                       setEngine("supertonic");
                       persistDraft({ language: "english", engine: "supertonic" });
                     }}
-                    className={`flex-1 min-h-[44px] rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`flex-1 min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       language === "english"
                         ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                         : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -1430,7 +1430,7 @@ export default function VoiceAgentPage() {
                       setEngine("supertonic");
                       persistDraft({ language: "vietnamese", engine: "supertonic" });
                     }}
-                    className={`flex-1 min-h-[44px] rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`flex-1 min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       language === "vietnamese"
                         ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                         : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -1452,7 +1452,7 @@ export default function VoiceAgentPage() {
                       setEngine("supertonic");
                       persistDraft({ engine: "supertonic" });
                     }}
-                    className={`min-h-[44px] rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       engine === "supertonic"
                         ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                         : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -1466,7 +1466,7 @@ export default function VoiceAgentPage() {
                       setEngine("kokoro");
                       persistDraft({ engine: "kokoro" });
                     }}
-                    className={`min-h-[44px] rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       engine === "kokoro"
                         ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                         : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -1480,7 +1480,7 @@ export default function VoiceAgentPage() {
                       setEngine("piper");
                       persistDraft({ engine: "piper" });
                     }}
-                    className={`min-h-[44px] rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       engine === "piper"
                         ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                         : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -1511,7 +1511,7 @@ export default function VoiceAgentPage() {
                     setEnabledTopics(topics);
                     persistDraft({ personaId: id, enabledTopics: topics });
                   }}
-                  className="w-full min-h-[44px] rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                  className="w-full min-h-11 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
                 >
                   {personas.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -1530,7 +1530,7 @@ export default function VoiceAgentPage() {
                     {findPersona(personaId)!.knowledgeTopics!.map((topic) => (
                       <label
                         key={topic}
-                        className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                        className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-zinc-200 px-3 py-2 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
                       >
                         <input
                           type="checkbox"
@@ -1588,7 +1588,7 @@ export default function VoiceAgentPage() {
               <button
                 type="submit"
                 disabled={loading || !systemPrompt.trim()}
-                className="w-full min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-base font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="w-full min-h-11 rounded-lg bg-zinc-900 px-4 py-2 text-base font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 {loading ? t("starting") : t("startConversation")}
               </button>
@@ -1623,13 +1623,13 @@ export default function VoiceAgentPage() {
             <div className="flex items-center gap-2">
               <Link
                 href="/voice-agent/history"
-                className="min-h-[44px] rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                className="min-h-11 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
               >
                 {t("history")}
               </Link>
               <button
                 onClick={resetConversation}
-                className="min-h-[44px] rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="min-h-11 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 {t("newConversation")}
               </button>
@@ -1753,7 +1753,7 @@ export default function VoiceAgentPage() {
                 setWantsAudio(!muted);
                 noteDraft("voice", textInput);
               }}
-              className={`min-h-[44px] rounded-lg border px-3 py-1.5 text-sm ${
+              className={`min-h-11 rounded-lg border px-3 py-1.5 text-sm ${
                 inputMode === "voice"
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -1771,7 +1771,7 @@ export default function VoiceAgentPage() {
                 setWantsAudio(false);
                 noteDraft("text", textInput);
               }}
-              className={`min-h-[44px] rounded-lg border px-3 py-1.5 text-sm ${
+              className={`min-h-11 rounded-lg border px-3 py-1.5 text-sm ${
                 inputMode === "text"
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -1795,7 +1795,7 @@ export default function VoiceAgentPage() {
                 setWantsAudio(true);
                 noteDraft("voice", textInput);
               }}
-              className={`min-h-[44px] rounded-lg border px-3 py-1.5 text-sm ${
+              className={`min-h-11 rounded-lg border px-3 py-1.5 text-sm ${
                 wantsAudio
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -1806,7 +1806,7 @@ export default function VoiceAgentPage() {
             <button
               type="button"
               onClick={() => void toggleMusic()}
-              className={`min-h-[44px] rounded-lg border px-3 py-1.5 text-sm ${
+              className={`min-h-11 rounded-lg border px-3 py-1.5 text-sm ${
                 musicOpen
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
                   : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -1864,7 +1864,7 @@ export default function VoiceAgentPage() {
                         type="button"
                         onClick={() => setMusicPage(libraryPage.current - 1)}
                         disabled={libraryPage.current <= 1}
-                        className="min-h-[32px] rounded px-2 text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                        className="min-h-8 rounded px-2 text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-700"
                       >
                         {t("musicPrev")}
                       </button>
@@ -1879,7 +1879,7 @@ export default function VoiceAgentPage() {
                         type="button"
                         onClick={() => setMusicPage(libraryPage.current + 1)}
                         disabled={libraryPage.current >= libraryPage.last}
-                        className="min-h-[32px] rounded px-2 text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                        className="min-h-8 rounded px-2 text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-700"
                       >
                         {t("musicNext")}
                       </button>
@@ -1928,12 +1928,12 @@ export default function VoiceAgentPage() {
                 }}
                 placeholder={t("typeMessage")}
                 disabled={processing}
-                className="min-h-[44px] flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+                className="min-h-11 flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
               />
               <button
                 type="submit"
                 disabled={processing || !textInput.trim()}
-                className="min-h-[44px] rounded-lg bg-zinc-900 px-4 py-2 text-base font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="min-h-11 rounded-lg bg-zinc-900 px-4 py-2 text-base font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 {t("send")}
               </button>
