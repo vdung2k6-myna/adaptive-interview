@@ -498,11 +498,11 @@ export default function TranscriptPage() {
     speakAbortRef.current = abortCtrl;
 
     try {
-      // The platform's own origin, rather than a relative path: on a local run that keeps this
-      // request out of the dev server's rewrite and its request buffering. On a built deployment
-      // the setting names this page's own origin, so it is proxied like every other call and this
-      // is not a bypass. The duplicate reading of the setting is not settled here.
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+      // Relative unless the deployment names another origin. The page is served by the same
+      // server that proxies `/api` and `/audio`, so a bare path follows whichever host the page
+      // was opened from; a hard `http://localhost:4000` fallback sent a browser on any other
+      // machine to its own loopback, where nothing answers.
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
       const res = await apiFetch(`${backendUrl}/api/voice/speak-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

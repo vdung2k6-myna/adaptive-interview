@@ -28,9 +28,20 @@ Create `.env.local` in the project root:
 # API Authentication (optional — enables Bearer token on all API routes)
 # The backend validates this token; the frontend injects it via apiFetch()
 # NEXT_PUBLIC_API_TOKEN=your-secret-token-here
+
+# Only when the API is served from a DIFFERENT origin than the page. Left unset,
+# the page calls its own origin and the rewrite in next.config.ts forwards
+# /api/* and /audio/* to the backend.
+# NEXT_PUBLIC_BACKEND_URL=https://api.<domain>
+
+# Only for `next dev` behind a tunnel or a LAN address: the hostnames the dev
+# server must serve its chunks to (comma separated). See §3.
+# NEXT_DEV_ORIGINS=<public-hostname>
 ```
 
 The frontend needs only `NEXT_PUBLIC_API_TOKEN` (and only when the backend has `API_AUTH_TOKEN` configured). Database, Ollama, and audio environment variables live in the backend's `.env`.
+
+`NEXT_PUBLIC_BACKEND_URL` is empty by default on purpose: a page calls `/api/...` on its own origin, and the server that served it proxies that to the backend. A hard `http://localhost:4000` fallback is wrong on every machine except the one running the backend — a phone resolves `localhost` to the phone, and the request fails as `TypeError: Failed to fetch` before it leaves the device.
 
 ## 3. Start Development Servers
 
@@ -52,7 +63,22 @@ npm run dev          # starts Next.js on port 3000
 
 Open [http://localhost:3000](http://localhost:3000)
 
-The frontend's `next.config.ts` automatically proxies `/api/*` and `/audio/*` requests to `http://localhost:4000` during development.
+The frontend's `next.config.ts` rewrites `/api/*` and `/audio/*` to `http://localhost:4000`. The rewrite is part of the build, not only of the dev server, so a production build proxies the same paths.
+
+### Running the dev server behind a tunnel or from another device
+
+`next dev` serves its scripts only to the hostname it started with. Open the page under any other name — a Cloudflare tunnel, a LAN address — and every chunk is refused with `Blocked cross-origin request to Next.js dev resource`: the HTML renders, nothing on the page works. Name the hostnames in `.env.local`:
+
+```bash
+NEXT_DEV_ORIGINS=<public-hostname>
+```
+
+Two more things bite a browser that reached the page before an edit:
+
+- The dev server answers chunks with `max-age=14400` and their URLs do not change when a module changes, so a browser keeps running the old bundle for four hours — a fix that tests clean on one machine can appear not to work on a phone. Development now answers `/_next/static/*` with `no-store`; a browser that cached before that change needs its cached files cleared once.
+- The service worker is **not registered in development**, and any registration already present is removed (with its caches) on page load, because its cache-first rule would pin the same stale chunks. A page that was controlled by a worker reloads itself once after clearing.
+
+Neither applies to a build: chunk names carry a content hash there, and the worker is registered deliberately.
 
 ## 4. Verify Everything Works
 
@@ -188,6 +214,11 @@ curl http://localhost:4000/health
 cd adaptive-interview-api
 npm run dev
 ```
+
+If the backend is healthy and the page still fails, read the URL the browser tried. `Failed to fetch` is thrown before any response exists, and the two causes look identical from the outside:
+
+- **The URL is `http://localhost:4000/...` on a device that is not the backend host.** That was the old default; `NEXT_PUBLIC_BACKEND_URL` unset now gives a relative path, so clear the site's cached files (or rebuild) to load the current bundle.
+- **The URL is the page's own origin and the request never reaches the server.** Check the backend's access log; nothing there means the browser refused the request (mixed content on an `http` API behind an `https` page, or a service worker holding a stale bundle).
 
 ### Ollama errors
 

@@ -65,11 +65,40 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function () {
-                  navigator.serviceWorker.register('/sw.js').catch(function (err) {
-                    console.error('Service worker registration failed:', err);
+                var production = ${JSON.stringify(process.env.NODE_ENV === "production")};
+                if (production) {
+                  window.addEventListener('load', function () {
+                    navigator.serviceWorker.register('/sw.js').catch(function (err) {
+                      console.error('Service worker registration failed:', err);
+                    });
                   });
-                });
+                } else {
+                  // Development chunks keep their URLs across edits, and the worker caches
+                  // /_next/static/* cache-first — so a device that opened the page once keeps
+                  // running that bundle no matter what is rebuilt. Unregister here, drop the
+                  // caches it made, and reload once: this page's own scripts already came
+                  // from that cache, so only the next document is the current source.
+                  var clearWorker = navigator.serviceWorker.getRegistrations()
+                    .then(function (registrations) {
+                      return Promise.all(registrations.map(function (registration) {
+                        return registration.unregister();
+                      }));
+                    })
+                    .then(function () {
+                      if (!window.caches) return;
+                      return caches.keys().then(function (keys) {
+                        return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+                      });
+                    })
+                    .catch(function () {});
+                  if (navigator.serviceWorker.controller) {
+                    clearWorker.then(function () {
+                      if (sessionStorage.getItem('sw-cleared')) return;
+                      sessionStorage.setItem('sw-cleared', '1');
+                      location.reload();
+                    });
+                  }
+                }
               }
             `,
           }}

@@ -18,7 +18,7 @@ The Adaptive Interview Engine follows a **separated frontend/backend architectur
               fetch() / apiFetch()
                           │
 ┌─────────────────────────┴───────────────────────────────────┐
-│           Next.js Rewrites (dev proxy)                    │
+│           Next.js Rewrites (dev + build)                  │
 │              /api/*  →  http://localhost:4000/api/*        │
 │              /audio/* → http://localhost:4000/audio/*       │
 └─────────────────────────┬───────────────────────────────────┘
@@ -99,11 +99,11 @@ Browser / Android / iOS
 Key points:
 
 - `public/manifest.json` declares `display: standalone`, icons, theme colors, and start URL. Chrome on Android uses it for the install prompt.
-- `public/sw.js` is registered by a small script in `src/app/layout.tsx`. It precaches the root shell, `offline.html`, and `manifest.json`, bypasses API requests entirely (it never caches them, and relaying them would bound a streamed response's lifetime by the worker's), and uses a network-first strategy for audio requests. Immutable Next.js static chunks (`/_next/static/*`) are cached long-term.
+- `public/sw.js` is registered by a small script in `src/app/layout.tsx`, in a **production build only**. In development the same script removes any existing registration and its caches on load, and reloads once: dev chunk URLs do not change when a module is edited, so a cache-first worker would hold a device on the bundle it first saw. It precaches the root shell, `offline.html`, and `manifest.json`, bypasses API requests entirely (it never caches them, and relaying them would bound a streamed response's lifetime by the worker's), and uses a network-first strategy for audio requests. Immutable Next.js static chunks (`/_next/static/*`) are cached long-term.
 - The service worker cache name includes a build id that `scripts/postbuild.mjs` stamps after each build, and that build fails rather than shipping a worker it could not stamp. Old caches are deleted on activation, preventing stale shells across deployments.
 - `public/offline.html` is served when the user launches the PWA without connectivity.
 - PWA assets live in `public/` and are copied into `.next/standalone/public/` by `scripts/postbuild.mjs`.
-- HTTPS is required in production for the install prompt; local development over `localhost` still allows service worker registration.
+- HTTPS is required in production for the install prompt. Development does not register the worker at all, so a `localhost` page has no offline fallback — that is one of the behaviours only a build exercises.
 
 ### iOS-specific PWA behavior
 

@@ -109,4 +109,6 @@ iOS caches PWA icons and splash screens. Remove the Home Screen icon and re-add 
   ```
 
 - The service worker (`public/sw.js`) is registered in `src/app/layout.tsx` and is stamped with a build id by `scripts/postbuild.mjs`.
+- It is registered **only in a production build**. `next dev` instead removes any registration and clears its caches on page load: development chunk URLs do not change when a module is edited, so a cache-first worker would keep the device on the bundle it first saw, and an installed app would never pick up the current code.
+- Installing the app does not change which server it talks to: the same origin serves the page and proxies `/api` and `/audio`, so an installed app on a phone reaches the API the same way the browser does.
 - See `docs/ARCHITECTURE.md` for the full PWA/service worker design.

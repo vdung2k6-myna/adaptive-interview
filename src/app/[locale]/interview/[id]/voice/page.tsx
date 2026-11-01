@@ -31,8 +31,13 @@ import { usePlaybackRate } from "@/lib/use-playback-rate";
  * and a message's recording, which the platform answers as a path on itself — `AudioPlayer`
  * cannot fetch that without the origin in front of it (see `lib/audio/session-recording.ts`).
  * Read in both places rather than twice, so there is one answer to "where is the platform".
+ *
+ * Empty by default so a path the platform answers is fetched from the page's own origin: the
+ * server that served the page is the one that proxies `/api` and `/audio` to the platform.
+ * A hard `http://localhost:4000` fallback pointed a browser opened anywhere else at its own
+ * loopback, and every call failed with "failed to fetch".
  */
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 
 interface VoiceMessage {
   id: string;

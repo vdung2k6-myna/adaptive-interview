@@ -740,7 +740,7 @@ Messages are organized by feature in `messages/{locale}.json`:
 - Navigation bar with links to Dashboard, Setup, Positions, Candidates, Campaigns
 - Dark mode support via Tailwind `dark:` classes
 - Metadata (title, description)
-- Registers the PWA service worker on the client
+- Registers the PWA service worker on the client — in a production build only; in development it unregisters any worker and clears its caches
 - Wraps children with `NextIntlClientProvider` for locale-aware rendering
 
 **Responsive behavior:**

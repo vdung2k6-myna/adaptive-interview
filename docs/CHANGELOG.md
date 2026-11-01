@@ -2,6 +2,41 @@
 
 > **Path migration note:** During the 2026-08 backend extraction, files under `src/app/api/*`, `src/lib/db.ts`, `src/lib/schema.ts`, `src/lib/ollama.ts`, `src/lib/evaluation.ts`, `src/lib/prompts.ts`, `src/lib/embeddings.ts`, `src/lib/seed.ts`, `src/lib/mcp/*`, and most of `src/lib/audio/*` moved to the standalone [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api) repository (default branch `master`). Historical entries below still name their original monolith paths. Current frontend files live under `src/app/*`, `src/components/*`, `src/lib/api-client.ts`, `src/lib/config/*`, `src/lib/types.ts`, `src/lib/use-playback-rate.ts`, and `src/lib/audio/sentence-queue.ts`.
 
+## 2026-11-01
+
+### The Client Calls the API on Its Own Origin
+
+**Problem:** `voice-agent`, the interview voice page and the transcript page fell back to `http://localhost:4000` when `NEXT_PUBLIC_BACKEND_URL` was unset. On any device other than the one running the API, `localhost` is the device itself: every call failed with `TypeError: Failed to fetch` and never reached the server. The rewrites already proxied the same paths, so the fallback bought nothing and broke the case a tunnel exists for.
+
+**Solution:** The fallback is `""`. A path the platform answers is requested from the page's own origin — the server that proxies `/api` and `/audio` to the backend. `NEXT_PUBLIC_BACKEND_URL` still names another origin when a deployment has one.
+
+**What changed:**
+
+| File | Change |
+|------|--------|
+| `src/app/[locale]/voice-agent/page.tsx` | `BACKEND_URL` defaults to `""`; a failed turn logs the URL, the page origin, and the error's name |
+| `src/app/[locale]/interview/[id]/voice/page.tsx` | same default |
+| `src/app/[locale]/interview/[id]/transcript/page.tsx` | same default |
+| `src/lib/persona-catalog.ts` | the warning names the URL and the error kind instead of "the request failed" |
+
+### Development Through a Tunnel
+
+**Problem:** Serving `next dev` behind a tunnel or to a phone failed two ways that read as application bugs. Next refuses its own chunks to any hostname but the one it started with (`Blocked cross-origin request to Next.js dev resource`), so the page rendered and nothing worked. Dev chunk URLs do not change when a module is edited, while the dev server answered them with `max-age=14400` — a device that loaded the page once kept running that bundle for four hours, including one that called `http://localhost:4000`. The service worker made it permanent: it caches `/_next/static/*` cache-first, so an installed app could not be updated by clearing the browser cache or reinstalling.
+
+**Solution:** Name the public hostname in `NEXT_DEV_ORIGINS` (`allowedDevOrigins`), answer dev chunks with `no-store`, and do not register the service worker in development — remove any existing registration and its caches on load, reloading once so the document that follows is the current bundle.
+
+**What changed:**
+
+| File | Change |
+|------|--------|
+| `next.config.ts` | `allowedDevOrigins` from `NEXT_DEV_ORIGINS`; `headers()` returns `no-store` for `/_next/static/*` when `NODE_ENV !== "production"` |
+| `src/app/layout.tsx` | production registers the worker as before; development unregisters it, deletes its caches, and reloads once |
+| `docs/SETUP.md`, `docs/PWA-INSTALL.md`, `README.md` | the tunnel case, the two cache layers, and the worker's production-only registration |
+
+**Verification:** Through a tunnel, a browser on a phone completed a full turn (speech → transcript → answer) after one cache clear; a desktop browser and the installed app both worked without further changes. A production build served hashed chunks with `immutable` and a stamped worker.
+
+---
+
 ## 2026-09-21
 
 ### Fix Missing Translation Keys Across Both Locales

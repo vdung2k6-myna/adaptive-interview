@@ -57,7 +57,7 @@ The backend uses Express, Drizzle ORM, PostgreSQL + pgvector, Ollama, and audio 
 
 ## Architecture
 
-The frontend is a **pure presentation layer**. All API calls go to the standalone Express backend (`adaptive-interview-api`, port `4000`). During development, `next.config.ts` rewrites proxy `/api/*` and `/audio/*` to the backend.
+The frontend is a **pure presentation layer**. All API calls go to the standalone Express backend (`adaptive-interview-api`, port `4000`). The page calls `/api/*` and `/audio/*` on its own origin, and `next.config.ts` rewrites both to the backend — in `next dev` and in a build alike. `NEXT_PUBLIC_BACKEND_URL` exists for the case where the API is served from another origin; unset, every call follows the host the page was opened from (`docs/SETUP.md` has the tunnel case).
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -69,7 +69,7 @@ The frontend is a **pure presentation layer**. All API calls go to the standalon
           fetch() / apiFetch()
                       │
 ┌─────────────────────┴───────────────────────┐
-│  Next.js Rewrites (dev proxy)               │
+│  Next.js rewrites (dev and build)           │
 │  /api/*  → http://localhost:4000/api/*      │
 │  /audio/* → http://localhost:4000/audio/*  │
 └─────────────────────┬───────────────────────┘
@@ -320,11 +320,13 @@ npm start
 node .next/standalone/server.js
 ```
 
-The server listens on port `3000` by default. Set `PORT` to override:
+The server listens on port `3000` by default. Set `PORT` to override, and `HOSTNAME` to bind somewhere other than every interface:
 
 ```bash
-PORT=4000 node .next/standalone/server.js
+PORT=4000 HOSTNAME=127.0.0.1 node .next/standalone/server.js
 ```
+
+The service worker is registered **only in a build**, never by `next dev`: a build stamps its cache with the build id (`scripts/postbuild.mjs`), while development chunk URLs stay the same across edits, so a worker there would keep a browser on the bundle it first cached.
 
 ### Deploy with PM2
 

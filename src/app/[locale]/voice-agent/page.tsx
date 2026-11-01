@@ -30,13 +30,14 @@ import { PERSONAS, getPersonaById, type Persona } from "./personas";
 /**
  * Where the platform is, as this page addresses it.
  *
- * Unset on a local run, so the fallback is :4000 directly — which is what keeps a streamed turn off
- * the dev server's rewrite. On a built deployment the setting names this page's own origin, and
- * every call below is then proxied by the platform exactly as a relative path would be. That is
- * not a bypass in a build and cannot be made one from here; what it costs is that a turn's
- * recording is a proxied body, and the proxy bounds one.
+ * Empty by default, so every call below is relative to the page's own origin and follows it
+ * wherever the page is served from: `:3000` in a local run, or the public hostname through a
+ * tunnel. The fallback used to be `http://localhost:4000` directly, which is the wrong machine
+ * when the page is opened from anywhere but the server itself — the browser resolved `localhost`
+ * to its own loopback, the request never reached the API, and the turn failed with
+ * "failed to fetch". A deployment that serves the API from another origin still names it here.
  */
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 
 /**
  * Where a track the person picked sits in the queue's index space.
@@ -78,6 +79,40 @@ const MUSIC_PAGE_SIZE = 5;
 const CATALOG_TIMEOUT_MS =
   Number(process.env.NEXT_PUBLIC_PERSONA_CATALOG_TIMEOUT_MS) || DEFAULT_CATALOG_TIMEOUT_MS;
 
+/**
+ * The provider profiles this deployment publishes, or an empty list when the
+ * catalog cannot be read.
+ *
+ * Empty is not a failure: the page then starts the session on the deployment's
+ * own default, exactly as it did before profiles existed, so a browser that
+ * cannot reach the catalog is still usable.
+ */
+async function fetchProviderProfiles(): Promise<ProviderProfile[]> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), CATALOG_TIMEOUT_MS);
+    const response = await apiFetch(`${BACKEND_URL}/api/provider-profiles`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) return [];
+    const body = (await response.json()) as { profiles?: unknown };
+    if (!Array.isArray(body.profiles)) return [];
+    return body.profiles.filter((entry): entry is ProviderProfile => {
+      if (typeof entry !== "object" || entry === null) return false;
+      const profile = entry as Record<string, unknown>;
+      return (
+        typeof profile.id === "string" &&
+        (profile.kind === "llm" || profile.kind === "stt" || profile.kind === "tts") &&
+        typeof profile.name === "string" &&
+        typeof profile.model === "string"
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
 interface AgentMessage {
   id: string;
   role: "agent" | "user";
@@ -85,9 +120,22 @@ interface AgentMessage {
   createdAt: string;
 }
 
+/** One provider profile the runtime publishes for the browser to choose from. */
+interface ProviderProfile {
+  id: string;
+  kind: "llm" | "stt" | "tts";
+  name: string;
+  model: string;
+  voice: string | null;
+  hasKey: boolean;
+}
+
 interface AgentConfig {
   language: "english" | "vietnamese";
-  engine: "kokoro" | "piper" | "supertonic";
+  /** The chosen voice provider, or null for the deployment's default. */
+  ttsProfileId: string | null;
+  /** The chosen transcriber, or null for the deployment's default. */
+  sttProfileId: string | null;
   personaId: string;
   systemPrompt: string;
   enabledTopics: string[];
@@ -109,7 +157,8 @@ interface AgentConfig {
 interface StoredVoiceAgentConfig {
   personaId?: string;
   language?: "english" | "vietnamese";
-  engine?: "kokoro" | "piper" | "supertonic";
+  ttsProfileId?: string;
+  sttProfileId?: string;
   enabledTopics?: string[];
 }
 
@@ -209,7 +258,10 @@ export default function VoiceAgentPage() {
   const personaIdDefault = "friendly-partner";
   // Configuration state
   const [language, setLanguage] = useState<"english" | "vietnamese">("english");
-  const [engine, setEngine] = useState<"kokoro" | "piper" | "supertonic">("piper");
+  /** The profiles the runtime publishes; empty when the catalog cannot be read. */
+  const [providers, setProviders] = useState<ProviderProfile[]>([]);
+  const [ttsProfileId, setTtsProfileId] = useState<string>("");
+  const [sttProfileId, setSttProfileId] = useState<string>("");
   const [personaId, setPersonaId] = useState<string>(personaIdDefault);
   /**
    * The personas the page offers: the catalog once it has been read, and the
@@ -573,11 +625,17 @@ export default function VoiceAgentPage() {
     let abandoned = false;
 
     void (async () => {
-      const loaded = await fetchPersonaCatalog({
-        fetch: apiFetch,
-        baseUrl: BACKEND_URL,
-        timeoutMs: CATALOG_TIMEOUT_MS,
-      });
+      // Both catalogs are read together: a persona decides what the page says,
+      // and a provider profile decides which voice hears and answers it. Either
+      // failing leaves the page usable on the deployment's own defaults.
+      const [loaded, loadedProfiles] = await Promise.all([
+        fetchPersonaCatalog({
+          fetch: apiFetch,
+          baseUrl: BACKEND_URL,
+          timeoutMs: CATALOG_TIMEOUT_MS,
+        }),
+        fetchProviderProfiles(),
+      ]);
       // A load that settles after the page has gone must not set state on it.
       if (abandoned) return;
 
@@ -588,11 +646,9 @@ export default function VoiceAgentPage() {
 
       const urlPersona = searchParams.get("persona");
       const urlLang = searchParams.get("lang");
-      const urlEngine = searchParams.get("engine");
 
       let resolvedPersona = personaIdDefault;
       let resolvedLang: "english" | "vietnamese" = "english";
-      let resolvedEngine: "kokoro" | "piper" | "supertonic" = "piper";
 
       // Validate URL persona — exactly, since an id that is not a persona has to
       // fall back to the default rather than become a selection with no option
@@ -607,26 +663,32 @@ export default function VoiceAgentPage() {
         resolvedLang = urlLang;
       }
 
-      // Validate URL engine
-      if (urlEngine === "kokoro" || urlEngine === "piper" || urlEngine === "supertonic") {
-        resolvedEngine = urlEngine;
-      }
-
       // If no valid URL params, use what this browser remembers (persistDraft).
       // The remembered persona counts only if it is exactly a persona, and the
       // remembered topics count only for the persona they were chosen for, since
       // this key outlives any particular persona.
+      const stored = readStoredConfig();
+      // A remembered profile counts only if the deployment still publishes it:
+      // an id that has been removed would otherwise restart on a profile the
+      // runtime will refuse.
+      const resolvedTtsProfileId =
+        stored.ttsProfileId !== undefined &&
+        loadedProfiles.some((profile) => profile.id === stored.ttsProfileId && profile.kind === "tts")
+          ? stored.ttsProfileId
+          : "";
+      const resolvedSttProfileId =
+        stored.sttProfileId !== undefined &&
+        loadedProfiles.some((profile) => profile.id === stored.sttProfileId && profile.kind === "stt")
+          ? stored.sttProfileId
+          : "";
+
       let rememberedTopics: string[] | undefined;
-      if (!urlPersona && !urlLang && !urlEngine) {
-        const stored = readStoredConfig();
+      if (!urlPersona && !urlLang) {
         if (stored.personaId && findPersonaIn(offered, stored.personaId)) {
           resolvedPersona = stored.personaId;
         }
         if (stored.language === "english" || stored.language === "vietnamese") {
           resolvedLang = stored.language;
-        }
-        if (stored.engine === "kokoro" || stored.engine === "piper" || stored.engine === "supertonic") {
-          resolvedEngine = stored.engine;
         }
         if (stored.personaId === resolvedPersona && Array.isArray(stored.enabledTopics)) {
           rememberedTopics = stored.enabledTopics.filter(
@@ -638,8 +700,10 @@ export default function VoiceAgentPage() {
       const persona = findPersonaIn(offered, resolvedPersona);
       const personaTopics = persona?.knowledgeTopics ? [...persona.knowledgeTopics] : [];
       setPersonas(offered);
+      setProviders(loadedProfiles);
       setLanguage(resolvedLang);
-      setEngine(resolvedEngine);
+      setTtsProfileId(resolvedTtsProfileId);
+      setSttProfileId(resolvedSttProfileId);
       setPersonaId(resolvedPersona);
       // A remembered selection is intersected with the persona's topics, so a topic
       // that has since left the persona cannot be sent on its behalf. An explicitly
@@ -789,7 +853,8 @@ export default function VoiceAgentPage() {
 
     const newConfig: AgentConfig = {
       language,
-      engine,
+      ttsProfileId: ttsProfileId === "" ? null : ttsProfileId,
+      sttProfileId: sttProfileId === "" ? null : sttProfileId,
       personaId,
       systemPrompt: forcePromptLanguage(systemPrompt.trim()),
       enabledTopics,
@@ -812,7 +877,8 @@ export default function VoiceAgentPage() {
     persistDraft({
       personaId: newConfig.personaId,
       language: newConfig.language,
-      engine: newConfig.engine,
+      ttsProfileId: newConfig.ttsProfileId ?? undefined,
+      sttProfileId: newConfig.sttProfileId ?? undefined,
       enabledTopics: newConfig.enabledTopics,
     });
 
@@ -866,7 +932,11 @@ export default function VoiceAgentPage() {
 
     const formData = new FormData();
     formData.append("language", activeConfig.language);
-    formData.append("engine", activeConfig.engine);
+    // A profile the account configured, or nothing: an empty choice is the
+    // deployment's default, which the runtime resolves without this page naming a
+    // provider or a voice.
+    if (activeConfig.ttsProfileId !== null) formData.append("ttsProfileId", activeConfig.ttsProfileId);
+    if (activeConfig.sttProfileId !== null) formData.append("sttProfileId", activeConfig.sttProfileId);
     formData.append("systemPrompt", activeConfig.systemPrompt);
     formData.append(
       "history",
@@ -1126,7 +1196,15 @@ export default function VoiceAgentPage() {
         return;
       }
 
-      console.error("[VoiceAgent] Turn error:", err);
+      // The URL and the page's own origin, because "Failed to fetch" says
+      // nothing about which address the browser could not reach: a relative
+      // call that resolves under another host reads the same as a dead one.
+      console.error("[VoiceAgent] Turn error:", err, {
+        url: `${BACKEND_URL}/api/voice-agent/stream`,
+        origin: window.location.origin,
+        name: err instanceof Error ? err.name : typeof err,
+        message: err instanceof Error ? err.message : String(err),
+      });
       setError(err instanceof Error ? err.message : t("errorAgentResponse"));
       setProcessing(false);
       setProcessingStep("");
@@ -1222,7 +1300,6 @@ export default function VoiceAgentPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
-          engine: config.engine,
           language: config.language,
         }),
         signal: abortCtrl.signal,
@@ -1412,8 +1489,7 @@ export default function VoiceAgentPage() {
                     type="button"
                     onClick={() => {
                       setLanguage("english");
-                      setEngine("supertonic");
-                      persistDraft({ language: "english", engine: "supertonic" });
+                      persistDraft({ language: "english" });
                     }}
                     className={`flex-1 min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       language === "english"
@@ -1427,8 +1503,7 @@ export default function VoiceAgentPage() {
                     type="button"
                     onClick={() => {
                       setLanguage("vietnamese");
-                      setEngine("supertonic");
-                      persistDraft({ language: "vietnamese", engine: "supertonic" });
+                      persistDraft({ language: "vietnamese" });
                     }}
                     className={`flex-1 min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                       language === "vietnamese"
@@ -1441,55 +1516,55 @@ export default function VoiceAgentPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  {t("engine")}
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEngine("supertonic");
-                      persistDraft({ engine: "supertonic" });
+              {providers.some((profile) => profile.kind === "tts") && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    {t("ttsProfile")}
+                  </label>
+                  <select
+                    value={ttsProfileId}
+                    onChange={(e) => {
+                      setTtsProfileId(e.target.value);
+                      persistDraft({ ttsProfileId: e.target.value || undefined });
                     }}
-                    className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                      engine === "supertonic"
-                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                        : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                    }`}
+                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
                   >
-                    {t("supertonic")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEngine("kokoro");
-                      persistDraft({ engine: "kokoro" });
-                    }}
-                    className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                      engine === "kokoro"
-                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                        : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    {t("kokoro")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEngine("piper");
-                      persistDraft({ engine: "piper" });
-                    }}
-                    className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                      engine === "piper"
-                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                        : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    {t("piper")}
-                  </button>
+                    <option value="">{t("providerDefault")}</option>
+                    {providers
+                      .filter((profile) => profile.kind === "tts")
+                      .map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name}
+                        </option>
+                      ))}
+                  </select>
                 </div>
-              </div>
+              )}
+
+              {providers.some((profile) => profile.kind === "stt") && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    {t("sttProfile")}
+                  </label>
+                  <select
+                    value={sttProfileId}
+                    onChange={(e) => {
+                      setSttProfileId(e.target.value);
+                      persistDraft({ sttProfileId: e.target.value || undefined });
+                    }}
+                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  >
+                    <option value="">{t("providerDefault")}</option>
+                    {providers
+                      .filter((profile) => profile.kind === "stt")
+                      .map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -1617,7 +1692,12 @@ export default function VoiceAgentPage() {
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
                 {personaFor(config.personaId).emoji} {personaFor(config.personaId).label} ·{" "}
                 {config.language === "english" ? "🇺🇸 English" : "🇻🇳 Vietnamese"} ·{" "}
-                {config.engine === "kokoro" ? "🎵 Kokoro" : config.engine === "piper" ? "🔊 Piper" : "🎙️ Supertonic"}
+                {config.ttsProfileId === null
+                  ? `🎙️ ${t("providerDefault")}`
+                  : `🎙️ ${
+                      providers.find((profile) => profile.id === config.ttsProfileId)?.name ??
+                      t("ttsProfile")
+                    }`}
               </p>
             </div>
             <div className="flex items-center gap-2">

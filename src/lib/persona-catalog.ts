@@ -168,8 +168,13 @@ export async function fetchPersonaCatalog(
     }
     return personas;
   } catch (err) {
-    const reason = controller.signal.aborted ? `no answer within ${timeoutMs}ms` : "the request failed";
-    console.warn(`[PersonaCatalog] ${reason}; using the built-in list`);
+    const reason = controller.signal.aborted
+      ? `no answer within ${timeoutMs}ms`
+      : `the request failed (${err instanceof Error ? err.name : typeof err})`;
+    // The address, not just the verdict: an empty baseUrl means the call went to
+    // this page's own origin, and which origin that is decides whether the
+    // failure is the page's or the platform's.
+    console.warn(`[PersonaCatalog] ${baseUrl}/api/personas: ${reason}; using the built-in list`);
     return null;
   } finally {
     clearTimeout(timer);
