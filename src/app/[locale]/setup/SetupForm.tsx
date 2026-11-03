@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { Link } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
@@ -25,11 +25,46 @@ export default function SetupForm({
   const [positionId, setPositionId] = useState("");
   const [candidateId, setCandidateId] = useState("");
   const [mode, setMode] = useState<"text" | "voice">("text");
-  const [ttsProvider, setTtsProvider] = useState<"kokoro" | "piper" | "supertonic">("supertonic");
+  const [ttsProfileId, setTtsProfileId] = useState("");
+  const [ttsProfiles, setTtsProfiles] = useState<{ id: string; name: string }[]>([]);
   const [language, setLanguage] = useState<"english" | "vietnamese">("english");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [interviewUrl, setInterviewUrl] = useState("");
+
+  // The profiles this deployment publishes. Empty is not an error: the session
+  // then stores no profile and the deployment default answers, so a catalog
+  // outage never blocks starting an interview.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/api/provider-profiles");
+        if (!res.ok) return;
+        const body = (await res.json()) as { profiles?: unknown };
+        if (!Array.isArray(body.profiles)) return;
+        const profiles = body.profiles.filter(
+          (entry): entry is { id: string; name: string } => {
+            if (typeof entry !== "object" || entry === null) return false;
+            const profile = entry as Record<string, unknown>;
+            return (
+              typeof profile.id === "string" &&
+              typeof profile.name === "string" &&
+              profile.kind === "tts"
+            );
+          }
+        );
+        if (cancelled) return;
+        setTtsProfiles(profiles);
+        setTtsProfileId(profiles[0]?.id ?? "");
+      } catch {
+        // No catalog: no choice, and the deployment default answers.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -47,7 +82,13 @@ export default function SetupForm({
       const res = await apiFetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ positionId, candidateId, mode, ttsProvider, language }),
+        body: JSON.stringify({
+          positionId,
+          candidateId,
+          mode,
+          ttsProfileId: ttsProfileId === "" ? null : ttsProfileId,
+          language,
+        }),
       });
 
       if (!res.ok) {
@@ -166,10 +207,7 @@ export default function SetupForm({
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => {
-                setLanguage("english");
-                setTtsProvider("supertonic");
-              }}
+              onClick={() => setLanguage("english")}
               className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
                 language === "english"
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
@@ -180,10 +218,7 @@ export default function SetupForm({
             </button>
             <button
               type="button"
-              onClick={() => {
-                setLanguage("vietnamese");
-                setTtsProvider("supertonic");
-              }}
+              onClick={() => setLanguage("vietnamese")}
               className={`flex-1 min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
                 language === "vietnamese"
                   ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
@@ -199,47 +234,29 @@ export default function SetupForm({
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                {t("voiceEngine")}
+                {t("voiceProfile")}
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTtsProvider("supertonic")}
-                  className={`min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
-                    ttsProvider === "supertonic"
-                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                      : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  }`}
+              {ttsProfiles.length === 0 ? (
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  {t("voiceProfileDefault")}
+                </p>
+              ) : (
+                <select
+                  value={ttsProfileId}
+                  onChange={(e) => setTtsProfileId(e.target.value)}
+                  className="w-full min-h-[44px] rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                 >
-                  {t("engineSupertonic")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTtsProvider("kokoro")}
-                  className={`min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
-                    ttsProvider === "kokoro"
-                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                      : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  }`}
-                >
-                  {t("engineKokoro")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTtsProvider("piper")}
-                  className={`min-h-[44px] inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-sm text-center transition-colors ${
-                    ttsProvider === "piper"
-                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                      : "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                  }`}
-                >
-                  {t("enginePiper")}
-                </button>
-              </div>
+                  {ttsProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              {t("voiceEngineNote")}
+              {t("voiceProfileNote")}
             </p>
           </div>
         )}

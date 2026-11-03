@@ -1301,6 +1301,7 @@ export default function VoiceAgentPage() {
         body: JSON.stringify({
           text,
           language: config.language,
+          ...(config.ttsProfileId ? { ttsProfileId: config.ttsProfileId } : {}),
         }),
         signal: abortCtrl.signal,
       });

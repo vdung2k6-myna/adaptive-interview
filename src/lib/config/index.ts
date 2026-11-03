@@ -27,14 +27,6 @@ export interface AppConfig {
   auth: {
     apiToken: string; // API_AUTH_TOKEN — if empty, auth is disabled
   };
-  audio: {
-    sttUrl: string;        // audio.cpp server (STT)
-    gatewayUrl: string;      // Audio Gateway (TTS)
-    sttModel: string;
-    defaultEngine: "kokoro" | "piper"; // default TTS engine
-    defaultVoice: string;   // voice ID, e.g. "diem_trinh" (kokoro) or "vi_VN-vais1000-medium" (piper)
-    timeoutMs: number;
-  };
 }
 
 import { developmentConfig } from "./development";

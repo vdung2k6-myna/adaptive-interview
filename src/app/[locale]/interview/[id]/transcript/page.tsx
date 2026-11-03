@@ -85,7 +85,7 @@ interface SessionData {
     status: string;
     maxTurns: number;
     currentTurn: number;
-    ttsProvider: string;
+    ttsProfileId: string | null;
     language: "english" | "vietnamese";
     createdAt: string;
     completedAt: string | null;
@@ -431,7 +431,7 @@ export default function TranscriptPage() {
   async function speakMessageStream(
     text: string,
     msgId: string,
-    engine?: string,
+    ttsProfileId?: string | null,
     playbackRate = 1,
     language?: "english" | "vietnamese"
   ) {
@@ -506,7 +506,7 @@ export default function TranscriptPage() {
       const res = await apiFetch(`${backendUrl}/api/voice/speak-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, engine, language }),
+        body: JSON.stringify({ text, ttsProfileId: ttsProfileId ?? undefined, language }),
         signal: abortCtrl.signal,
       });
 
@@ -635,14 +635,14 @@ export default function TranscriptPage() {
       }
       console.error("[Transcript] Streaming speak failed, falling back:", err);
       cleanupStreamState();
-      await speakMessageFallback(text, msgId, engine, playbackRate, abortCtrl.signal, currentGen);
+      await speakMessageFallback(text, msgId, ttsProfileId, playbackRate, abortCtrl.signal, currentGen);
     }
   }
 
   async function speakMessageFallback(
     text: string,
     msgId: string,
-    engine: string | undefined,
+    ttsProfileId: string | null | undefined,
     playbackRate: number,
     signal: AbortSignal,
     myGen: number
@@ -656,7 +656,7 @@ export default function TranscriptPage() {
       const res = await apiFetch("/api/voice/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, engine }),
+        body: JSON.stringify({ text, ttsProfileId: ttsProfileId ?? undefined }),
         signal,
       });
 
@@ -912,7 +912,7 @@ export default function TranscriptPage() {
                                 : speakMessageStream(
                                     msg.content,
                                     msg.id,
-                                    sessionData?.session.ttsProvider,
+                                    sessionData?.session.ttsProfileId,
                                     getMessagePlaybackRate(msg.id),
                                     sessionData?.session.language
                                   )
