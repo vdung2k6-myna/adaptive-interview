@@ -18,6 +18,7 @@ import {
   shouldPrefetch,
   type VoicePrefetchController,
 } from "@/lib/voice-prefetch";
+import { collectReplayAudio } from "@/lib/voice-agent-replay";
 import {
   DEFAULT_CATALOG_TIMEOUT_MS,
   fetchPersonaCatalog,
@@ -118,6 +119,12 @@ interface AgentMessage {
   role: "agent" | "user";
   content: string;
   createdAt: string;
+  /**
+   * The reply's delivered WAV segments, base64 and in index order, when its turn
+   * delivered any. Replayed instead of synthesizing the text again, so a shaped
+   * voice is heard the same way twice. Absent for a muted or text-only turn.
+   */
+  audio?: string[];
 }
 
 /** One provider profile the runtime publishes for the browser to choose from. */
@@ -329,6 +336,8 @@ export default function VoiceAgentPage() {
   >(new Map());
   const nextExpectedIndexRef = useRef(0);
   const seenSentenceIndicesRef = useRef(new Set<number>());
+  /** The current turn's delivered segments, by index; attached to its reply at done. */
+  const turnAudioRef = useRef<Map<number, string>>(new Map());
 
   // Per-turn guards
   const turnGenerationRef = useRef(0);
@@ -832,6 +841,7 @@ export default function VoiceAgentPage() {
   function resetConversation() {
     cleanupStreamState();
     pendingTrackRef.current = null;
+    turnAudioRef.current = new Map();
     setConfig(null);
     setMessages([]);
     setError("");
@@ -866,6 +876,7 @@ export default function VoiceAgentPage() {
     };
 
     setConfig(newConfig);
+    turnAudioRef.current = new Map();
     setMessages([]);
     setError("");
     setLoading(false);
@@ -896,6 +907,7 @@ export default function VoiceAgentPage() {
       | null
   ) {
     const myGen = ++turnGenerationRef.current;
+    turnAudioRef.current = new Map();
     turnStreamingRef.current = true;
 
     if (turnAbortRef.current) {
@@ -1081,6 +1093,11 @@ export default function VoiceAgentPage() {
                   break;
                 }
                 seenSentenceIndicesRef.current.add(s.index);
+                // Retained regardless of the mute check: a turn that asked to speak
+                // still delivers its audio, and replay is a later, separate request.
+                if (s.audioData) {
+                  turnAudioRef.current.set(s.index, s.audioData);
+                }
                 console.log(`[VoiceAgent] SSE sentence index=${s.index} audioData=${s.audioData ? "present" : "null"} text="${s.text.substring(0, 40)}"`);
 
                 let audioBuffer: AudioBuffer | null = null;
@@ -1127,11 +1144,14 @@ export default function VoiceAgentPage() {
                 setProcessingStep("");
 
                 const finalText = d.fullText || currentAgentText.trim();
+                const replayAudio = collectReplayAudio(turnAudioRef.current);
+                turnAudioRef.current = new Map();
                 const agentMsg: AgentMessage = {
                   id: d.messageId || currentMessageId,
                   role: "agent",
                   content: finalText,
                   createdAt: new Date().toISOString(),
+                  ...(replayAudio.length > 0 ? { audio: replayAudio } : {}),
                 };
                 setMessages((prev) => [...prev, agentMsg]);
                 setStreamItems([]);
@@ -1260,8 +1280,10 @@ export default function VoiceAgentPage() {
     speakNextExpectedIndexRef.current = idx;
   }
 
-  async function speakMessage(text: string, msgId: string) {
+  async function speakMessage(msg: AgentMessage) {
     if (!config) return;
+    const text = msg.content;
+    const msgId = msg.id;
 
     const currentGen = ++speakGenerationRef.current;
 
@@ -1289,6 +1311,43 @@ export default function VoiceAgentPage() {
           }
         },
       });
+    }
+
+    // A reply whose turn delivered audio is replayed from those bytes — the
+    // voice it was actually heard in. Decoding the whole reply before enqueueing
+    // keeps the queue gapless, and the delivery is marked done only afterwards so
+    // `onFinished` cannot clean up between two segments.
+    if (msg.audio && msg.audio.length > 0 && audioCtxRef.current) {
+      const audioCtx = audioCtxRef.current;
+      try {
+        const buffers: AudioBuffer[] = [];
+        for (const segment of msg.audio) {
+          if (currentGen !== speakGenerationRef.current) return;
+          const binaryString = atob(segment);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          buffers.push(await audioCtx.decodeAudioData(bytes.buffer));
+        }
+        if (currentGen !== speakGenerationRef.current) return;
+
+        const queue = sentenceQueueRef.current;
+        if (queue) {
+          buffers.forEach((buffer, index) => queue.enqueue(index, buffer, text));
+          speakStreamDoneRef.current = true;
+          if (!queue.getIsPlaying() && queue.getQueueLength() === 0) {
+            cleanupSpeakState();
+            setSpeakingMsgId(null);
+          }
+        }
+      } catch (err) {
+        if (currentGen !== speakGenerationRef.current) return;
+        console.error("[VoiceAgent] Replay failed:", err);
+        cleanupSpeakState();
+        setSpeakingMsgId(null);
+      }
+      return;
     }
 
     const abortCtrl = new AbortController();
@@ -1740,7 +1799,7 @@ export default function VoiceAgentPage() {
                   {msg.role === "agent" && (
                     <button
                       onClick={() =>
-                        speakingMsgId === msg.id ? stopSpeaking() : speakMessage(msg.content, msg.id)
+                        speakingMsgId === msg.id ? stopSpeaking() : speakMessage(msg)
                       }
                       disabled={speakingMsgId !== null && speakingMsgId !== msg.id}
                       className={`text-xs leading-none ${

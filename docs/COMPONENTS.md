@@ -476,6 +476,9 @@ A small toggle in the header switches between 🌊 Streaming and ⏹ Standard mo
 - Support voice replies via `AudioRecorder` and text replies via input field
 - Toggle between voice and text input modes
 - Render message thread with agent/user bubbles and replay buttons
+- Replay a reply from the audio its turn already delivered, so a shaped voice is
+  heard the same way twice; a muted or text-only reply delivered no audio and
+  falls back to synthesizing through the speech route
 - Manage in-memory conversation history (no backend storage)
 
 **Key State:**
