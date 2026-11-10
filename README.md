@@ -57,7 +57,7 @@ The backend uses Express, Drizzle ORM, PostgreSQL + pgvector, Ollama, and audio 
 
 ## Architecture
 
-The frontend is a **pure presentation layer**. All API calls go to the standalone Express backend (`adaptive-interview-api`, port `4000`). The page calls `/api/*` and `/audio/*` on its own origin, and `next.config.ts` rewrites both to the backend — in `next dev` and in a build alike. `NEXT_PUBLIC_BACKEND_URL` exists for the case where the API is served from another origin; unset, every call follows the host the page was opened from (`docs/SETUP.md` has the tunnel case).
+The frontend is a **pure presentation layer**. API calls go to the standalone Express backend (`adaptive-interview-api`, port `4000`) through a Next.js catch-all route that injects `NEXT_PUBLIC_API_TOKEN` server-side. Audio requests use the `/audio/*` rewrite in `next.config.ts`. `NEXT_PUBLIC_BACKEND_URL` names the backend origin as the Next.js server reaches it, never the app's own (the proxy refuses that with `502`); when unset, it uses `http://localhost:4000`. The value is inlined at build time, so changing it requires a rebuild.
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -69,9 +69,9 @@ The frontend is a **pure presentation layer**. All API calls go to the standalon
           fetch() / apiFetch()
                       │
 ┌─────────────────────┴───────────────────────┐
-│  Next.js rewrites (dev and build)           │
-│  /api/*  → http://localhost:4000/api/*      │
-│  /audio/* → http://localhost:4000/audio/*  │
+│  Next.js API proxy + audio rewrite          │
+│  /api/* → server proxy (adds NEXT_PUBLIC_API_TOKEN)│
+│  /audio/* → http://localhost:4000/audio/*   │
 └─────────────────────┬───────────────────────┘
                       │
 ┌─────────────────────┴───────────────────────┐
@@ -117,7 +117,7 @@ src/
 │   ├── MobileNav.tsx             # Small-screen hamburger navigation
 │   └── LanguageSwitcher.tsx      # Locale switcher
 └── lib/                          # Frontend utilities only
-    ├── api-client.ts             # Browser fetch wrapper with Bearer token injection
+    ├── api-client.ts             # Browser fetch wrapper for the server-side API proxy
     ├── config/                   # Frontend environment config
     │   ├── index.ts                # Active config export
     │   ├── development.ts          # Dev settings
@@ -138,7 +138,7 @@ All API endpoints are documented in the backend:
 
 - **[Backend API Reference](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/API.md)**
 
-The frontend calls these endpoints via `apiFetch()` from `@/lib/api-client`, which injects `Authorization: Bearer <token>` when `NEXT_PUBLIC_API_TOKEN` is set.
+The frontend calls these endpoints via `apiFetch()` from `@/lib/api-client`. Requests pass through the Next.js catch-all API route, which adds `NEXT_PUBLIC_API_TOKEN` on the server.
 
 ---
 
@@ -148,7 +148,7 @@ Create a `.env.local` file in the project root:
 
 ```bash
 # API Authentication (only required when backend has API_AUTH_TOKEN configured)
-NEXT_PUBLIC_API_TOKEN=your-secret-token-here
+NEXT_PUBLIC_API_TOKEN=your-backend-token-here
 
 # How long the voice-agent page waits for the persona catalog (GET /api/personas)
 # before falling back to its built-in persona list. Optional: 3000ms when unset.
@@ -213,7 +213,7 @@ Create `.env.local`:
 
 ```bash
 # Only needed if backend has API_AUTH_TOKEN configured
-NEXT_PUBLIC_API_TOKEN=your-secret-token-here
+NEXT_PUBLIC_API_TOKEN=your-backend-token-here
 
 # Optional: persona-catalog timeout in ms (default 3000)
 NEXT_PUBLIC_PERSONA_CATALOG_TIMEOUT_MS=3000
@@ -277,7 +277,6 @@ Every page is served under a locale segment; these are the routes after it.
 | `/voice-agent` | Ephemeral persona conversation |
 | `/voice-agent/history` | Past voice-agent sessions |
 | `/offline` | PWA offline fallback |
-| `/cors-test` | Development-only CORS probe |
 
 ---
 

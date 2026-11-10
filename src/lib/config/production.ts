@@ -27,6 +27,6 @@ export const productionConfig: AppConfig = {
     authToken: process.env.MCP_AUTH_TOKEN || "",
   },
   auth: {
-    apiToken: process.env.API_AUTH_TOKEN || "",
+    apiToken: process.env.NEXT_PUBLIC_API_TOKEN || "",
   },
 };

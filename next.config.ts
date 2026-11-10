@@ -45,13 +45,9 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Proxy API calls and audio files to standalone backend during development
+  // Proxy audio files to the standalone backend during development and builds.
   async rewrites() {
     return [
-      {
-        source: "/api/:path*",
-        destination: "http://localhost:4000/api/:path*",
-      },
       {
         source: "/audio/:path*",
         destination: "http://localhost:4000/audio/:path*",

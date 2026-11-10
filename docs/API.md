@@ -1,27 +1,27 @@
 # API Documentation
 
-The Adaptive Interview Engine API is served by the standalone Express backend in `adaptive-interview-api`. The Next.js frontend does not implement any API routes; it delegates every call to the backend.
+The Adaptive Interview Engine API is served by the standalone Express backend in `adaptive-interview-api`. The Next.js frontend's catch-all API route forwards requests to the backend and injects `NEXT_PUBLIC_API_TOKEN` server-side.
 
 ## Base URL
 
-During development, the frontend's `next.config.ts` rewrites proxy these paths to the backend:
+API requests pass through the Next.js server-side proxy in development and production:
 
 ```
-http://localhost:3000/api/*  →  http://localhost:4000/api/*
-http://localhost:3000/audio/* →  http://localhost:4000/audio/*
+http://localhost:3000/api/*  →  Next.js proxy  →  http://localhost:4000/api/*
+http://localhost:3000/audio/* → Next.js rewrite → http://localhost:4000/audio/*
 ```
 
-In production, a reverse proxy (nginx, Vercel, etc.) should do the same.
+Set `NEXT_PUBLIC_BACKEND_URL` when the backend is not available at `http://localhost:4000` from the Next.js server. It names the backend origin as the server reaches it, never the app's own origin (the proxy answers `502` for that), and it is inlined at build time, so a change requires a rebuild and restart (`docs/SETUP.md` §2).
 
 ## Authentication
 
-When the backend has `API_AUTH_TOKEN` configured, every request to `/api/*` must include:
+When the backend has `API_AUTH_TOKEN` configured, set the same value in the Next.js server environment as `NEXT_PUBLIC_API_TOKEN`. The proxy adds it to forwarded requests; browser requests do not need to include the secret. If backend authentication is disabled, leave the frontend variable unset and the proxy forwards requests without an authorization header:
 
 ```
 Authorization: Bearer <token>
 ```
 
-Frontend components use `apiFetch()` from `@/lib/api-client`, which automatically injects the header when `NEXT_PUBLIC_API_TOKEN` is set.
+Frontend components use `apiFetch()` from `@/lib/api-client` to send requests through the proxy.
 
 ## Full API Reference
 

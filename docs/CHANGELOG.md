@@ -2,6 +2,16 @@
 
 > **Path migration note:** During the 2026-08 backend extraction, files under `src/app/api/*`, `src/lib/db.ts`, `src/lib/schema.ts`, `src/lib/ollama.ts`, `src/lib/evaluation.ts`, `src/lib/prompts.ts`, `src/lib/embeddings.ts`, `src/lib/seed.ts`, `src/lib/mcp/*`, and most of `src/lib/audio/*` moved to the standalone [`adaptive-interview-api`](https://github.com/vdung2k6-myna/adaptive-interview-api) repository (default branch `master`). Historical entries below still name their original monolith paths. Current frontend files live under `src/app/*`, `src/components/*`, `src/lib/api-client.ts`, `src/lib/config/*`, `src/lib/types.ts`, `src/lib/use-playback-rate.ts`, and `src/lib/audio/sentence-queue.ts`.
 
+## 2026-11-10
+
+### Proxy API Requests Server-Side
+
+**Problem:** Browser API requests needed a way to reach the backend without exposing the API authentication token, and the proxy handler's static route could not accept catch-all path parameters.
+
+**Solution:** Route `/api/*` through `src/app/api/[...path]/route.ts`, where the Next.js server injects `NEXT_PUBLIC_API_TOKEN`. Keep audio proxying on the existing rewrite.
+
+**What changed:** Removed the API rewrite, replaced the proxy handler's static route with `/api/[...path]`, and made the proxy refuse a `NEXT_PUBLIC_BACKEND_URL` that names the app's own origin (answering `502` instead of recursing to an edge-proxy timeout). Deleted the token-bearing CORS debug page, corrected the backend token's name in the setup documentation, and updated the setup, API, architecture, security, and README text for the server-side proxy. Token injection is conditional: when backend authentication is disabled, requests are forwarded without an authorization header.
+
 ## 2026-11-01
 
 ### The Client Calls the API on Its Own Origin

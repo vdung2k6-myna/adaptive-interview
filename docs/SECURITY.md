@@ -46,21 +46,15 @@ const html = useMemo(() => {
 
 **Risk:** Putting secrets in a Next.js environment variable that is exposed to the browser.
 
-**Frontend variables used by the browser:**
+The API proxy keeps `NEXT_PUBLIC_API_TOKEN` server-side and injects it when forwarding requests. The browser does not receive or send this credential. Other `NEXT_PUBLIC_*` values are public by design and must not contain secrets.
 
 | Variable | Purpose | Exposed? |
 |---|---|---|
-| `NEXT_PUBLIC_API_TOKEN` | Injected as `Authorization: Bearer` by `apiFetch()` | Yes (browser) |
-| `NEXT_PUBLIC_API_URL` | Backend origin for production builds | Yes (browser) |
+| `NEXT_PUBLIC_BACKEND_URL` | Optional backend origin | Yes (browser) |
+| `NEXT_PUBLIC_API_URL` | Optional public API origin | Yes (browser) |
 | `NEXT_PUBLIC_API_MOCKING` | Enables MSW mock worker | Yes (browser) |
 
-**Non-sensitive variables only.** `DATABASE_URL`, `OLLAMA_BASE_URL`, and backend service credentials must **never** be added to the frontend repository or any `NEXT_PUBLIC_` variable.
-
-**`NEXT_PUBLIC_API_TOKEN` is safe because:**
-
-- It is the same token the browser already sends on every API request
-- It does not grant access beyond what the user's browser already has
-- It must match the backend `API_AUTH_TOKEN`
+**Never put database credentials, backend service credentials, or `NEXT_PUBLIC_API_TOKEN` in a `NEXT_PUBLIC_` variable.**
 
 ### 3. PWA / Service Worker Security
 
@@ -110,21 +104,21 @@ Never rely on client-side validation alone; treat it as a UX optimization.
 
 ## Environment Variables
 
-**Allowed in frontend `.env.local`:**
+**Server-side frontend configuration:**
 
 | Variable | Risk | Notes |
 |---|---|---|
-| `NEXT_PUBLIC_API_TOKEN` | Medium | Must match backend `API_AUTH_TOKEN`; rotate if leaked |
+| `NEXT_PUBLIC_API_TOKEN` | High | Server-only; must match the backend token when API authentication is enabled |
 | `NEXT_PUBLIC_API_URL` | Low | Public origin of the backend API |
 | `NEXT_PUBLIC_API_MOCKING` | Low | Dev/test flag |
 
-**Must NOT appear in the frontend repository:**
+**Must NOT appear in browser-exposed environment variables:**
 
 | Variable | Why |
 |---|---|
 | `DATABASE_URL` | Contains DB credentials |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | Backend concerns |
-| `API_AUTH_TOKEN` | Use `NEXT_PUBLIC_API_TOKEN` in frontend only; keep the backend secret in backend `.env` |
+| `NEXT_PUBLIC_API_TOKEN` | Keep the backend credential server-side; never prefix it with `NEXT_PUBLIC_` |
 | `MCP_AUTH_TOKEN` | Analytics backend secret |
 | Any cloud provider key | Backend only |
 

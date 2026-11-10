@@ -18,9 +18,9 @@ The Adaptive Interview Engine follows a **separated frontend/backend architectur
               fetch() / apiFetch()
                           │
 ┌─────────────────────────┴───────────────────────────────────┐
-│           Next.js Rewrites (dev + build)                  │
-│              /api/*  →  http://localhost:4000/api/*        │
-│              /audio/* → http://localhost:4000/audio/*       │
+│          Next.js API proxy + audio rewrite                 │
+│  /api/* → server proxy (adds NEXT_PUBLIC_API_TOKEN)               │
+│  /audio/* → http://localhost:4000/audio/*                  │
 └─────────────────────────┬───────────────────────────────────┘
                           │
 ┌─────────────────────────┴───────────────────────────────────┐
@@ -72,7 +72,7 @@ Frontend Client Component
 apiFetch("/api/positions")
     │
     ▼
-Next.js dev proxy /api/* → :4000
+Next.js /api/[...path] proxy → :4000 (server-side auth)
     │
     ▼
 Express backend (Drizzle + PostgreSQL)
@@ -346,8 +346,8 @@ The backend repository contains:
 ## Important Conventions
 
 - **Client components** explicitly declare `"use client"`; all data-fetching pages in this repo are Client Components
-- **API calls from browser** use `apiFetch()` from `@/lib/api-client`, which injects `Authorization: Bearer` when `NEXT_PUBLIC_API_TOKEN` is set
+- **API calls from browser** use `apiFetch()` from `@/lib/api-client`; the Next.js catch-all route injects `NEXT_PUBLIC_API_TOKEN` server-side.
 - **Database queries** happen only in the backend; the frontend has no database connection
 - **Environment config** in the frontend (`src/lib/config/`) is limited to frontend concerns; backend tuning lives in `adaptive-interview-api/src/lib/config/`
-- **Next.js rewrites** proxy `/api/*` and `/audio/*` to the Express backend during development (`next.config.ts`). In production, a reverse proxy (nginx, Vercel, etc.) should do the same.
+- **Next.js routing** uses the `/api/[...path]` route to proxy API requests and add server-side authentication; the `/audio/*` rewrite proxies audio files to the Express backend.
 - **Backend architecture** is documented in [adaptive-interview-api/docs/ARCHITECTURE.md](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/ARCHITECTURE.md)

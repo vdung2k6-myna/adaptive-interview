@@ -26,12 +26,13 @@ Create `.env.local` in the project root:
 
 ```bash
 # API Authentication (optional — enables Bearer token on all API routes)
-# The backend validates this token; the frontend injects it via apiFetch()
-# NEXT_PUBLIC_API_TOKEN=your-secret-token-here
+# The backend validates this token; the Next.js server injects it when proxying API requests.
+# NEXT_PUBLIC_API_TOKEN=your-backend-token-here
 
-# Only when the API is served from a DIFFERENT origin than the page. Left unset,
-# the page calls its own origin and the rewrite in next.config.ts forwards
-# /api/* and /audio/* to the backend.
+# The backend origin as reached FROM THE NEXT.JS SERVER, not the browser.
+# Unset, the proxy uses http://localhost:4000. Never this app's own origin: the
+# proxy refuses to forward to itself and answers 502. `NEXT_PUBLIC_` values are
+# inlined at build time, so changing this needs `npm run build` and a restart.
 # NEXT_PUBLIC_BACKEND_URL=https://api.<domain>
 
 # Only for `next dev` behind a tunnel or a LAN address: the hostnames the dev
@@ -39,9 +40,13 @@ Create `.env.local` in the project root:
 # NEXT_DEV_ORIGINS=<public-hostname>
 ```
 
-The frontend needs only `NEXT_PUBLIC_API_TOKEN` (and only when the backend has `API_AUTH_TOKEN` configured). Database, Ollama, and audio environment variables live in the backend's `.env`.
+The frontend needs `NEXT_PUBLIC_API_TOKEN` only when the backend requires API authentication. Use the same token in both server environments. Database, Ollama, and audio environment variables live in the backend's `.env`.
 
-`NEXT_PUBLIC_BACKEND_URL` is empty by default on purpose: a page calls `/api/...` on its own origin, and the server that served it proxies that to the backend. A hard `http://localhost:4000` fallback is wrong on every machine except the one running the backend — a phone resolves `localhost` to the phone, and the request fails as `TypeError: Failed to fetch` before it leaves the device.
+`NEXT_PUBLIC_BACKEND_URL` names the backend **as the Next.js server reaches it**, not as the browser does. Leave it unset when the backend runs on the same host: the proxy falls back to `http://localhost:4000`. Set it when the server cannot reach that address — for example `http://127.0.0.1:4000` when the backend listens on a specific interface, or `https://api.<domain>` when the backend is on another host.
+
+Never set it to the app's own origin. The proxy compares the configured target with the origin serving the request and refuses a match with `502`, naming the variable, instead of forwarding to itself. Without that guard the request recurses through the public ingress until an edge proxy times out — observed as a Cloudflare `524` after about 100 seconds, with the backend idle.
+
+The value carries the `NEXT_PUBLIC_` prefix, so it is inlined into the build. Editing `.env*` and restarting is not enough: correct it, run `npm run build`, and restart the server.
 
 ## 3. Start Development Servers
 
@@ -63,7 +68,7 @@ npm run dev          # starts Next.js on port 3000
 
 Open [http://localhost:3000](http://localhost:3000)
 
-The frontend's `next.config.ts` rewrites `/api/*` and `/audio/*` to `http://localhost:4000`. The rewrite is part of the build, not only of the dev server, so a production build proxies the same paths.
+The Next.js catch-all route forwards `/api/*` requests to `http://localhost:4000` and injects `NEXT_PUBLIC_API_TOKEN` server-side. The `/audio/*` rewrite also targets the backend. Both apply in development and production.
 
 ### Running the dev server behind a tunnel or from another device
 
@@ -112,7 +117,7 @@ For production deployments, create `.env.production` in the project root. Next.j
 
 ```bash
 # .env.production (frontend only)
-NEXT_PUBLIC_API_TOKEN=your-production-token
+NEXT_PUBLIC_API_TOKEN=your-backend-token
 ```
 
 The backend has its own production `.env` with `DATABASE_URL`, `OLLAMA_BASE_URL`, `API_AUTH_TOKEN`, etc.
@@ -217,7 +222,8 @@ npm run dev
 
 If the backend is healthy and the page still fails, read the URL the browser tried. `Failed to fetch` is thrown before any response exists, and the two causes look identical from the outside:
 
-- **The URL is `http://localhost:4000/...` on a device that is not the backend host.** That was the old default; `NEXT_PUBLIC_BACKEND_URL` unset now gives a relative path, so clear the site's cached files (or rebuild) to load the current bundle.
+- **The URL is `http://localhost:4000/...` in the browser.** The page is running a bundle from before the server-side proxy; current builds call `/api/...` on the page's own origin. Clear the site's cached files (or rebuild) to load the current bundle.
+- **The server answers `502` naming `NEXT_PUBLIC_BACKEND_URL`.** The configured backend origin is this app's own origin. Point it at the backend, rebuild, and restart (§2).
 - **The URL is the page's own origin and the request never reaches the server.** Check the backend's access log; nothing there means the browser refused the request (mixed content on an `http` API behind an `https` page, or a service worker holding a stale bundle).
 
 ### Ollama errors

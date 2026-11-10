@@ -80,7 +80,7 @@ npm install
 
 # 3. Configure environment (see SETUP.md)
 #    - Backend: .env (DATABASE_URL, OLLAMA_BASE_URL, etc.)
-#    - Frontend: .env.local (NEXT_PUBLIC_API_TOKEN if auth enabled)
+#    - Frontend server: .env.local (NEXT_PUBLIC_API_TOKEN if auth enabled)
 
 # 4. Start backend (port 4000)
 cd adaptive-interview-api
@@ -133,7 +133,7 @@ Open [http://localhost:3000](http://localhost:3000)
                      └─────────┘        └─────────┘        └─────────┘
 ```
 
-The frontend has **no database connection**. All reads and writes go through the backend Express API, proxied via Next.js rewrites in development and a reverse proxy in production.
+The frontend has **no database connection**. All reads and writes go through the backend Express API, proxied by the Next.js catch-all route with server-side authentication.
 
 ## Contributing
 

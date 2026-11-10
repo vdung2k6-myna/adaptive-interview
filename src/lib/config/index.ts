@@ -25,7 +25,7 @@ export interface AppConfig {
     authToken: string;
   };
   auth: {
-    apiToken: string; // API_AUTH_TOKEN — if empty, auth is disabled
+    apiToken: string; // NEXT_PUBLIC_API_TOKEN — if empty, auth is disabled
   };
 }
 
