@@ -68,7 +68,7 @@ npm run dev          # starts Next.js on port 3000
 
 Open [http://localhost:3000](http://localhost:3000)
 
-The Next.js catch-all route forwards `/api/*` requests to `http://localhost:4000` and injects `NEXT_PUBLIC_API_TOKEN` server-side. The `/audio/*` rewrite also targets the backend. Both apply in development and production.
+The Next.js catch-all route forwards `/api/*` requests to `http://localhost:4000` and injects `NEXT_PUBLIC_API_TOKEN` server-side. The `/audio/*` route handler forwards audio the same way, with the same credential, and passes `Range` requests through. Both apply in development and production.
 
 ### Running the dev server behind a tunnel or from another device
 

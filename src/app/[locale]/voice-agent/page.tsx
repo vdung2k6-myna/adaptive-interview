@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Link } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
@@ -51,25 +51,33 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 const MUSIC_INDEX_BASE = 1_000_000;
 
 /**
- * A track's URL, as the queue needs it.
+ * A track's path is used exactly as the server sent it: `/audio/music/<file>`, same-origin.
  *
- * The server answers a path on **itself** — `/audio/music/<file>` — and this page is served from
- * somewhere else, so the path has to be given the API's own origin before anything fetches it: a bare
- * path resolves against the page, which serves no recordings and refuses that path with a 401, which the
- * queue then reports as a track that is gone. `apiFetch` adds the credential and does not change the
- * origin, which is why this cannot live there.
+ * `src/app/audio/[...path]/route.ts` forwards that path to the backend with the credential, so the
+ * browser never needs one. An absolute URL here would either point the browser at the server's own
+ * loopback address or be reduced to `/api/audio/...` by `apiFetch`; neither is the recording.
  */
-function trackUrl(path: string): string {
-  return path.startsWith("/") ? `${BACKEND_URL}${path}` : path;
-}
 
 /**
  * How many tracks the list shows at once.
  *
- * A few hundred tracks is a list to read a page at a time rather than one to scroll past, and five is
- * small enough to take in at a glance on a phone.
+ * A few hundred tracks is a list to read a page at a time rather than one to scroll past, and ten is
+ * small enough to take in at a glance on a phone; the search field is what makes a library of
+ * thousands navigable.
  */
-const MUSIC_PAGE_SIZE = 5;
+const MUSIC_PAGE_SIZE = 10;
+
+/**
+ * Fold a title or a query to one form for searching: case, accents and the
+ * Vietnamese đ are differences in spelling rather than in the track.
+ */
+function foldForSearch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/đ/g, "d");
+}
 
 /**
  * How long the page waits for the persona catalog before offering its built-in
@@ -314,6 +322,24 @@ export default function VoiceAgentPage() {
   const [musicOpen, setMusicOpen] = useState(false);
   const [music, setMusic] = useState<{ tracks: LibraryTrack[]; report: string | null } | null>(null);
   const [musicPage, setMusicPage] = useState(1);
+  const [musicQuery, setMusicQuery] = useState("");
+  // What the list is showing after the search. Before any early return, so the
+  // hook runs on the configuration screen too. The folder is part of the haystack
+  // as well as the title, so "guitar" finds a track filed under a folder of that name.
+  const musicMatches = useMemo(() => {
+    if (music === null || music.report !== null) return [];
+    const query = foldForSearch(musicQuery);
+    if (query === "") return music.tracks;
+    return music.tracks.filter((track) => {
+      let haystack = track.title;
+      try {
+        haystack = `${track.title} ${decodeURIComponent(track.url)}`;
+      } catch {
+        // A URL that cannot be decoded is still searchable by its title.
+      }
+      return foldForSearch(haystack).includes(query);
+    });
+  }, [music, musicQuery]);
   const [playingTrack, setPlayingTrack] = useState<LibraryTrack | null>(null);
   // The queue index the track was enqueued at, so the stop control can cancel
   // that one item without silencing a reply still being spoken.
@@ -338,6 +364,15 @@ export default function VoiceAgentPage() {
   const seenSentenceIndicesRef = useRef(new Set<number>());
   /** The current turn's delivered segments, by index; attached to its reply at done. */
   const turnAudioRef = useRef<Map<number, string>>(new Map());
+  /**
+   * Tracks the model chose this turn, by the queue index the server gave them.
+   *
+   * A model-chosen track plays at an index one past the reply's last sentence, not
+   * at `MUSIC_INDEX_BASE` like a library pick. This map is how the queue callbacks
+   * recognise it as a track — for the now-playing strip, the stop control, and the
+   * rule that an explicit request is not gated by the speech mode.
+   */
+  const modelTracksRef = useRef<Map<number, LibraryTrack>>(new Map());
 
   // Per-turn guards
   const turnGenerationRef = useRef(0);
@@ -407,6 +442,10 @@ export default function VoiceAgentPage() {
    * turn it clears a `null`, and on a track the person started it takes down the strip that names it —
    * when the track ends, and when the library no longer serves it.
    */
+  function isTrackIndex(index: number): boolean {
+    return index >= MUSIC_INDEX_BASE || modelTracksRef.current.has(index);
+  }
+
   function makeQueue(): SentenceAudioQueue | null {
     if (!audioCtxRef.current) return null;
 
@@ -418,7 +457,12 @@ export default function VoiceAgentPage() {
         // The queue reached a person-chosen track: it is sounding now rather
         // than waiting behind the reply. Reply sentences carry the turn's own
         // indices, which stay below the music base.
-        if (index >= MUSIC_INDEX_BASE) {
+        if (isTrackIndex(index)) {
+          const modelTrack = modelTracksRef.current.get(index);
+          if (modelTrack) {
+            setPlayingTrack(modelTrack);
+            setPlayingTrackIndex(index);
+          }
           setPlayingTrackStarted(true);
         }
       },
@@ -426,7 +470,8 @@ export default function VoiceAgentPage() {
         console.log(`[VoiceAgent] Audio ended index=${index}`);
         // A person's track ends here. The turn's queue finishing is not the same
         // event: a held track is still waiting when the reply drains (design D2).
-        if (index >= MUSIC_INDEX_BASE) {
+        if (isTrackIndex(index)) {
+          modelTracksRef.current.delete(index);
           setPlayingTrack(null);
           setPlayingTrackIndex(null);
           setPlayingTrackStarted(false);
@@ -441,9 +486,10 @@ export default function VoiceAgentPage() {
       onError: (index, err) => {
         console.warn(`[VoiceAgent] Audio error index=${index}:`, err);
         setQueueIsPlaying(false);
-        if (index >= MUSIC_INDEX_BASE) {
-          // A track the person started, which the library no longer serves: named as gone rather than
-          // left as a strip claiming to play something that is not playing (design D2).
+        if (isTrackIndex(index)) {
+          // A track the person or the model chose, which the library no longer serves: named as gone
+          // rather than left as a strip claiming to play something that is not playing (design D2).
+          modelTracksRef.current.delete(index);
           setPlayingTrack(null);
           setPlayingTrackIndex(null);
           setPlayingTrackStarted(false);
@@ -472,6 +518,7 @@ export default function VoiceAgentPage() {
     setMusicOpen(true);
     setMusic(null);
     setMusicPage(1);
+    setMusicQuery("");
     setMusic(await fetchLibrary(`${BACKEND_URL}/api/music`, apiFetch));
   }
 
@@ -514,7 +561,7 @@ export default function VoiceAgentPage() {
       return;
     }
 
-    queue.enqueue(index, trackUrl(track.url), track.title);
+    queue.enqueue(index, track.url, track.title);
   }
 
   // A held choice waits for the turn's sentence stream to end. Once it has, every
@@ -527,7 +574,7 @@ export default function VoiceAgentPage() {
     pendingTrackRef.current = null;
     sentenceQueueRef.current?.enqueue(
       pending.index,
-      trackUrl(pending.track.url),
+      pending.track.url,
       pending.track.title
     );
   }, [processing]);
@@ -550,6 +597,12 @@ export default function VoiceAgentPage() {
       sentenceQueueRef.current?.stop();
     }
     pendingTrackRef.current = null;
+    if (playingTrackIndex !== null) {
+      modelTracksRef.current.delete(playingTrackIndex);
+      pendingChunksRef.current.delete(playingTrackIndex);
+    } else {
+      modelTracksRef.current.clear();
+    }
     setPlayingTrack(null);
     setPlayingTrackIndex(null);
     setPlayingTrackStarted(false);
@@ -786,6 +839,7 @@ export default function VoiceAgentPage() {
     }
     seenSentenceIndicesRef.current.clear();
     pendingChunksRef.current.clear();
+    modelTracksRef.current.clear();
     nextExpectedIndexRef.current = 0;
     setStreamItems([]);
     setQueueIsPlaying(false);
@@ -803,7 +857,10 @@ export default function VoiceAgentPage() {
       // switch or a mute lands on the next sentence instead of on the next turn.
       // The index still advances either way: the queue's cursor is what keeps the
       // chunks in order, and a skipped one must not leave a hole in it.
-      if (chunk.audio && wantsAudioRef.current) {
+      // A track the model chose is an explicit request, like a library pick, so
+      // the speech gate does not apply to it; the reply's sentences still obey it.
+      const isModelTrack = modelTracksRef.current.has(idx);
+      if (chunk.audio && (isModelTrack || wantsAudioRef.current)) {
         const what =
           typeof chunk.audio === "string" ? `track ${chunk.audio}` : `duration=${chunk.audio.duration}`;
         console.log(`[VoiceAgent] Enqueue index=${idx} ${what} text="${chunk.text.substring(0, 40)}"`);
@@ -932,6 +989,7 @@ export default function VoiceAgentPage() {
     // Reset per-turn streaming state
     seenSentenceIndicesRef.current.clear();
     pendingChunksRef.current.clear();
+    modelTracksRef.current.clear();
     nextExpectedIndexRef.current = 0;
     setStreamItems([]);
     setProcessing(true);
@@ -1074,9 +1132,17 @@ export default function VoiceAgentPage() {
                 if (myGen !== turnGenerationRef.current) break;
                 const m = parsed as MusicEvent;
                 console.log(`[VoiceAgent] SSE music index=${m.index} title="${m.title}"`);
-                // `trackUrl`, not the path as sent: the queue fetches it, and a path on the API
-                // resolved against this page is a 401 — see where `trackUrl` is defined.
-                pendingChunksRef.current.set(m.index, { audio: trackUrl(m.url), text: m.title });
+                // The path the server sent, same-origin: the page's `/audio` route adds
+                // the credential, so the queue can fetch it without one in the browser.
+                const modelTrack: LibraryTrack = { title: m.title, url: m.url };
+                modelTracksRef.current.set(m.index, modelTrack);
+                // Set before enqueueing: an idle queue may reach the track inside
+                // flushPendingChunks and report onStart synchronously, and the strip
+                // must name what is about to play.
+                setPlayingTrack(modelTrack);
+                setPlayingTrackIndex(m.index);
+                setPlayingTrackStarted(false);
+                pendingChunksRef.current.set(m.index, { audio: m.url, text: m.title });
                 flushPendingChunks();
                 // In the transcript beside the sentences, so what the person reads matches what
                 // they are hearing — and not added to the reply's own text, which is the model's.
@@ -1734,10 +1800,10 @@ export default function VoiceAgentPage() {
     );
   }
 
-  // What the list is showing. Derived rather than stored: which page a person is on is state, and the
-  // tracks that page holds are not.
-  const libraryPage =
-    music !== null && music.report === null ? pageOf(music.tracks, musicPage) : null;
+  // What the list is showing after the search. Derived rather than stored: the query and the page
+  // are state, and the tracks a page holds are not. The filtering lives with the state above, before
+  // the configuration screen's early return, so its hook is called on every render.
+  const libraryPage = musicMatches.length > 0 ? pageOf(musicMatches, musicPage) : null;
 
   // Chat screen
   return (
@@ -1982,9 +2048,22 @@ export default function VoiceAgentPage() {
                 // What the server said about there being nothing: a deployment with no library is a
                 // sentence, and an empty list would read as a shelf that happens to be empty.
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">{music.report}</p>
-              ) : libraryPage ? (
+              ) : (
                 <>
-                  <ul className="space-y-1">
+                  <input
+                    type="search"
+                    value={musicQuery}
+                    onChange={(e) => {
+                      setMusicQuery(e.target.value);
+                      setMusicPage(1);
+                    }}
+                    placeholder={t("musicSearchPlaceholder")}
+                    aria-label={t("musicSearch")}
+                    className="mb-2 min-h-9 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-50"
+                  />
+                  {libraryPage ? (
+                    <>
+                      <ul className="space-y-1">
                     {libraryPage.items.map(({ track, at }) => (
                       <li key={track.url}>
                         <button
@@ -2025,8 +2104,14 @@ export default function VoiceAgentPage() {
                       </button>
                     </div>
                   )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                      {t("musicNoMatches")}
+                    </p>
+                  )}
                 </>
-              ) : null}
+              )}
             </div>
           )}
 

@@ -45,15 +45,10 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Proxy audio files to the standalone backend during development and builds.
-  async rewrites() {
-    return [
-      {
-        source: "/audio/:path*",
-        destination: "http://localhost:4000/audio/:path*",
-      },
-    ];
-  },
+  // `/audio/*` is deliberately not a rewrite: it is a route handler
+  // (src/app/audio/[...path]/route.ts) so the backend credential can be injected.
+  // A rewrite can change the destination but cannot add a header, and `/audio` is
+  // behind the same Bearer as `/api`.
 
   // Expose build metadata to the client
   env: {

@@ -8,9 +8,19 @@
 
 **Problem:** Browser API requests needed a way to reach the backend without exposing the API authentication token, and the proxy handler's static route could not accept catch-all path parameters.
 
-**Solution:** Route `/api/*` through `src/app/api/[...path]/route.ts`, where the Next.js server injects `NEXT_PUBLIC_API_TOKEN`. Keep audio proxying on the existing rewrite.
+**Solution:** Route `/api/*` through `src/app/api/[...path]/route.ts`, where the Next.js server injects `NEXT_PUBLIC_API_TOKEN`. Route `/audio/*` through `src/app/audio/[...path]/route.ts` with the same credential: a rewrite can change the destination but cannot add a header, and the backend protects `/audio` with the same Bearer.
 
 **What changed:** Removed the API rewrite, replaced the proxy handler's static route with `/api/[...path]`, and made the proxy refuse a `NEXT_PUBLIC_BACKEND_URL` that names the app's own origin (answering `502` instead of recursing to an edge-proxy timeout). Deleted the token-bearing CORS debug page, corrected the backend token's name in the setup documentation, and updated the setup, API, architecture, security, and README text for the server-side proxy. Token injection is conditional: when backend authentication is disabled, requests are forwarded without an authorization header.
+
+### Serve Music and Recordings Through the Audio Proxy
+
+**Problem:** A music track chosen by the model, and a recording played from a message, were fetched from `/audio/...` without a credential. The Next.js rewrite forwarded the path but could not add the Bearer, so `/audio` answered 401; an absolute track URL was worse, because `apiFetch` reduced it to `/api/audio/...` and the backend answered 404. The queue reported the track as gone.
+
+**Solution:** Move `/audio/*` onto a Route Handler (`src/app/audio/[...path]/route.ts`) that shares the proxy with `/api`, injects the same token, and passes `HEAD` and `Range` through. Track paths stay same-origin, and `apiFetch` keeps an `/audio` path instead of prefixing `/api`.
+
+**What changed:** Extracted the proxy to `src/lib/backend-proxy.ts`, added the audio route, removed the `/audio` rewrite, excluded `/audio` from the locale middleware, and updated `api-client.ts`, the voice-agent's track URL handling, and the API/architecture/setup/README docs.
+
+**Verification:** A track selected in the deployed voice-agent page is fetched through `/audio` (200, `audio/mpeg`) and starts playing after the reply drains; a `Range` request answers 206 with `Content-Range`.
 
 ## 2026-11-01
 

@@ -57,7 +57,7 @@ The backend uses Express, Drizzle ORM, PostgreSQL + pgvector, Ollama, and audio 
 
 ## Architecture
 
-The frontend is a **pure presentation layer**. API calls go to the standalone Express backend (`adaptive-interview-api`, port `4000`) through a Next.js catch-all route that injects `NEXT_PUBLIC_API_TOKEN` server-side. Audio requests use the `/audio/*` rewrite in `next.config.ts`. `NEXT_PUBLIC_BACKEND_URL` names the backend origin as the Next.js server reaches it, never the app's own (the proxy refuses that with `502`); when unset, it uses `http://localhost:4000`. The value is inlined at build time, so changing it requires a rebuild.
+The frontend is a **pure presentation layer**. API calls go to the standalone Express backend (`adaptive-interview-api`, port `4000`) through Next.js catch-all routes that inject `NEXT_PUBLIC_API_TOKEN` server-side; audio requests go through the same proxy at `/audio/*`, because the backend protects recordings with the same credential. `NEXT_PUBLIC_BACKEND_URL` names the backend origin as the Next.js server reaches it, never the app's own (the proxy refuses that with `502`); when unset, it uses `http://localhost:4000`. The value is inlined at build time, so changing it requires a rebuild.
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -69,9 +69,9 @@ The frontend is a **pure presentation layer**. API calls go to the standalone Ex
           fetch() / apiFetch()
                       │
 ┌─────────────────────┴───────────────────────┐
-│  Next.js API proxy + audio rewrite          │
+│  Next.js API + audio proxy                  │
 │  /api/* → server proxy (adds NEXT_PUBLIC_API_TOKEN)│
-│  /audio/* → http://localhost:4000/audio/*   │
+│  /audio/* → server proxy (same injection)   │
 └─────────────────────┬───────────────────────┘
                       │
 ┌─────────────────────┴───────────────────────┐

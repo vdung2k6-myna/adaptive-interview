@@ -12,7 +12,7 @@
  * @returns fetch Response.
  */
 export function apiFetch(url: string, init?: RequestInit): Promise<Response> {
-  if (url.startsWith('/proxy')) {
+  if (url.startsWith('/api') || url.startsWith('/audio')) {
     return fetch(url, { ...init });
   }
 
@@ -20,9 +20,12 @@ export function apiFetch(url: string, init?: RequestInit): Promise<Response> {
 
   if (url.startsWith('http')) {
     const urlObj = new URL(url);
-    const path = urlObj.pathname.startsWith('/api')
-      ? urlObj.pathname
-      : `/api${urlObj.pathname}`;
+    // `/api` and `/audio` are both served by a server-side route on this origin,
+    // so an absolute URL is reduced to its path rather than to `/api/audio/...`.
+    const path =
+      urlObj.pathname.startsWith('/api') || urlObj.pathname.startsWith('/audio')
+        ? urlObj.pathname
+        : `/api${urlObj.pathname}`;
     proxyUrl = `${path}${urlObj.search}`;
   } else {
     // Ensure the path starts with a slash for the proxy

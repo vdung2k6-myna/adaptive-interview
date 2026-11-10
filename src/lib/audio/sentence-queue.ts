@@ -26,13 +26,13 @@ export interface SentenceQueueOptions extends SentenceQueueCallbacks {
   /** Playback rate. 1.0 = normal, <1.0 = slower, >1.0 = faster. Default: 1.0 */
   playbackRate?: number;
   /**
-   * The authenticated fetch (`apiFetch`), for the items that arrive as a URL.
+   * The caller's fetch (`apiFetch`), for the items that arrive as a URL.
    *
-   * **Not optional, and that is the point.** A queue that quietly fell back to the
-   * global `fetch` would send no credential, be refused with a 401, and report the
-   * sentence as an error — the page would simply stop speaking, on a deployment whose
-   * recordings are no longer readable by their URL alone. A default here would be a
-   * silent wrong answer, so a caller has to state one.
+   * **Not optional, and that is the point.** A URL item has to follow the same
+   * routing as the rest of the page — the `/api` and `/audio` routes that add the
+   * deployment's credential server-side. A queue that quietly fell back to the
+   * global `fetch` would bypass that routing instead of following it, so a caller
+   * has to state one.
    */
   fetch: QueueFetch;
 }

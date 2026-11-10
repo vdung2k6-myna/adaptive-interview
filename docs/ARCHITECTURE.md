@@ -18,9 +18,9 @@ The Adaptive Interview Engine follows a **separated frontend/backend architectur
               fetch() / apiFetch()
                           │
 ┌─────────────────────────┴───────────────────────────────────┐
-│          Next.js API proxy + audio rewrite                 │
+│          Next.js API + audio proxy                         │
 │  /api/* → server proxy (adds NEXT_PUBLIC_API_TOKEN)               │
-│  /audio/* → http://localhost:4000/audio/*                  │
+│  /audio/* → server proxy (same credential injection)       │
 └─────────────────────────┬───────────────────────────────────┘
                           │
 ┌─────────────────────────┴───────────────────────────────────┐
@@ -349,5 +349,5 @@ The backend repository contains:
 - **API calls from browser** use `apiFetch()` from `@/lib/api-client`; the Next.js catch-all route injects `NEXT_PUBLIC_API_TOKEN` server-side.
 - **Database queries** happen only in the backend; the frontend has no database connection
 - **Environment config** in the frontend (`src/lib/config/`) is limited to frontend concerns; backend tuning lives in `adaptive-interview-api/src/lib/config/`
-- **Next.js routing** uses the `/api/[...path]` route to proxy API requests and add server-side authentication; the `/audio/*` rewrite proxies audio files to the Express backend.
+- **Next.js routing** uses the `/api/[...path]` and `/audio/[...path]` routes to proxy API requests and audio files, adding server-side authentication to both.
 - **Backend architecture** is documented in [adaptive-interview-api/docs/ARCHITECTURE.md](https://github.com/vdung2k6-myna/adaptive-interview-api/blob/master/docs/ARCHITECTURE.md)

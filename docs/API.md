@@ -8,7 +8,7 @@ API requests pass through the Next.js server-side proxy in development and produ
 
 ```
 http://localhost:3000/api/*  →  Next.js proxy  →  http://localhost:4000/api/*
-http://localhost:3000/audio/* → Next.js rewrite → http://localhost:4000/audio/*
+http://localhost:3000/audio/* → Next.js audio proxy → http://localhost:4000/audio/*
 ```
 
 Set `NEXT_PUBLIC_BACKEND_URL` when the backend is not available at `http://localhost:4000` from the Next.js server. It names the backend origin as the server reaches it, never the app's own origin (the proxy answers `502` for that), and it is inlined at build time, so a change requires a rebuild and restart (`docs/SETUP.md` §2).
@@ -42,7 +42,7 @@ See the backend documentation for the complete REST API:
 | Voice | `/api/voice/*` | Voice interview + TTS |
 | Voice Agent | `/api/voice-agent/stream` | Ephemeral voice/text agent chat |
 | MCP | `/api/mcp` | MCP analytics SSE |
-| Audio | `/audio/*` | Static audio file serving |
+| Audio | `/audio/*` | Static audio file serving, through the Next.js audio proxy from the browser |
 
 ### Streaming TTS Event Schema
 
